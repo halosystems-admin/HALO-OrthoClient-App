@@ -1,8 +1,69 @@
-import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { config } from '../config';
 
+// Polyfill browser APIs needed by pdf-parse (set up at module load time)
+// These are needed because pdf-parse's dependency pdfjs-dist uses them at module load
+const g = globalThis as any;
+
+if (typeof g.DOMMatrix === 'undefined') {
+  // Minimal DOMMatrix polyfill for Node.js
+  g.DOMMatrix = class DOMMatrix {
+    constructor(init?: string | number[]) {
+      if (init) {
+        if (typeof init === 'string') {
+          const values = init.match(/matrix\(([^)]+)\)/)?.[1]?.split(',').map(Number) || [];
+          this.a = values[0] ?? 1;
+          this.b = values[1] ?? 0;
+          this.c = values[2] ?? 0;
+          this.d = values[3] ?? 1;
+          this.e = values[4] ?? 0;
+          this.f = values[5] ?? 0;
+        }
+      } else {
+        this.a = 1;
+        this.b = 0;
+        this.c = 0;
+        this.d = 1;
+        this.e = 0;
+        this.f = 0;
+      }
+    }
+    a = 1;
+    b = 0;
+    c = 0;
+    d = 1;
+    e = 0;
+    f = 0;
+  };
+}
+if (typeof g.ImageData === 'undefined') {
+  g.ImageData = class ImageData {
+    constructor(public data: Uint8ClampedArray, public width: number, public height?: number) {}
+  };
+}
+if (typeof g.Path2D === 'undefined') {
+  g.Path2D = class Path2D {};
+}
+
 const { driveApi, uploadApi } = config;
+
+const DRIVE_REQUEST_TIMEOUT_MS = 25_000;
+
+/** fetch with timeout to avoid hanging on slow/hung Drive API */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = DRIVE_REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 // --- Types ---
 
@@ -35,14 +96,18 @@ export interface DriveFileRaw {
  * Throws on non-2xx responses so callers don't silently consume errors.
  */
 export async function driveRequest(token: string, path: string, options: RequestInit = {}): Promise<DriveResponse> {
-  const res = await fetch(`${driveApi}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string> || {}),
+  const res = await fetchWithTimeout(
+    `${driveApi}${path}`,
+    {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(options.headers as Record<string, string> || {}),
+      },
     },
-  });
+    DRIVE_REQUEST_TIMEOUT_MS
+  );
 
   const data = (await res.json()) as DriveResponse;
 
@@ -226,6 +291,8 @@ export async function extractTextFromFile(
 
     if (file.mimeType === 'application/pdf' || file.name.endsWith('.pdf')) {
       const buffer = await downloadFileBuffer(token, file.id);
+      // Dynamic import - polyfills are already set up at module load time
+      const { PDFParse } = await import('pdf-parse');
       const parser = new PDFParse({ data: new Uint8Array(buffer) });
       const result = await parser.getText();
       await parser.destroy();

@@ -2,9 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { UserSettings } from '../../../shared/types';
 import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
-  FileText, Upload, Check, AlertCircle, RefreshCw,
+  FileText, Upload, Check, AlertCircle, Send, Plus,
 } from 'lucide-react';
-import { runSchedulerNow } from '../services/api';
+import { requestNewTemplate } from '../services/api';
+
+const HALO_TEMPLATE_OPTIONS = [
+  { id: 'clinical_note', name: 'Clinical Note' },
+  { id: 'op_report', name: 'Operation Report' },
+  { id: 'jon_note', name: 'Open Note' },
+];
 
 const DEFAULT_SETTINGS: UserSettings = {
   firstName: '',
@@ -17,6 +23,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   noteTemplate: 'soap',
   customTemplateContent: '',
   customTemplateName: '',
+  templateId: 'clinical_note',
 };
 
 interface Props {
@@ -26,10 +33,11 @@ interface Props {
   onSave: (settings: UserSettings) => Promise<void>;
   userEmail?: string;
   loginTime: number;
+  onToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 export const SettingsModal: React.FC<Props> = ({
-  isOpen, onClose, settings, onSave, userEmail, loginTime,
+  isOpen, onClose, settings, onSave, userEmail, loginTime, onToast,
 }) => {
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState<UserSettings>(settings || DEFAULT_SETTINGS);
@@ -37,9 +45,14 @@ export const SettingsModal: React.FC<Props> = ({
   const [elapsed, setElapsed] = useState('');
   const [templateTab, setTemplateTab] = useState<'soap' | 'custom'>(settings?.noteTemplate || 'soap');
   const [uploadError, setUploadError] = useState('');
-  const [schedulerRunning, setSchedulerRunning] = useState(false);
-  const [schedulerMessage, setSchedulerMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Request new template form
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [requestDescription, setRequestDescription] = useState('');
+  const [requestFiles, setRequestFiles] = useState<File[]>([]);
+  const [requestSending, setRequestSending] = useState(false);
+  const requestFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (settings) {
@@ -69,7 +82,7 @@ export const SettingsModal: React.FC<Props> = ({
     if (editMode && requiredFieldsMissing) return;
     setSaving(true);
     try {
-      const updated = { ...form, noteTemplate: templateTab };
+      const updated = { ...form, noteTemplate: templateTab, templateId: form.templateId || 'clinical_note' };
       await onSave(updated);
       setForm(updated);
       setEditMode(false);
@@ -115,16 +128,40 @@ export const SettingsModal: React.FC<Props> = ({
     e.target.value = '';
   };
 
-  const handleRunScheduler = async () => {
-    setSchedulerMessage(null);
-    setSchedulerRunning(true);
-    try {
-      const res = await runSchedulerNow();
-      setSchedulerMessage(res.message || 'Done.');
-    } catch {
-      setSchedulerMessage('Request failed. Make sure you’re signed in.');
+
+  const handleRequestTemplateSubmit = async () => {
+    const desc = requestDescription.trim();
+    if (!desc) {
+      onToast?.('Please describe the template you need.', 'info');
+      return;
     }
-    setSchedulerRunning(false);
+    setRequestSending(true);
+    try {
+      const attachments: Array<{ name: string; content: string }> = [];
+      for (const file of requestFiles) {
+        const content = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => {
+            const result = r.result as string;
+            const base64 = result.includes(',') ? result.split(',')[1] : result;
+            resolve(base64 || '');
+          };
+          r.onerror = () => reject(new Error('Failed to read file'));
+          r.readAsDataURL(file);
+        });
+        if (content) attachments.push({ name: file.name, content });
+      }
+      await requestNewTemplate({ description: desc, attachments: attachments.length ? attachments : undefined });
+      onToast?.('Request sent. We will get back to you.', 'success');
+      setShowRequestForm(false);
+      setRequestDescription('');
+      setRequestFiles([]);
+    } catch (err: unknown) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as Error).message) : 'Request failed.';
+      onToast?.(msg, 'error');
+    } finally {
+      setRequestSending(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -138,8 +175,8 @@ export const SettingsModal: React.FC<Props> = ({
         {/* Header */}
         <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-6 py-5 flex items-center justify-between rounded-t-2xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-teal-500/20 rounded-xl flex items-center justify-center">
-              <User size={20} className="text-teal-400" />
+            <div className="w-10 h-10 bg-sky-500/20 rounded-xl flex items-center justify-center">
+              <User size={20} className="text-sky-400" />
             </div>
             <div>
               <h2 className="text-white font-bold text-lg">Profile & Settings</h2>
@@ -150,7 +187,7 @@ export const SettingsModal: React.FC<Props> = ({
             {!editMode && (
               <button
                 onClick={() => setEditMode(true)}
-                className="p-2 rounded-lg text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-all"
+                className="p-2 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-700 transition-all"
                 title="Edit Profile"
               >
                 <Pencil size={16} />
@@ -168,7 +205,7 @@ export const SettingsModal: React.FC<Props> = ({
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Session Info */}
           <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
-            <Clock size={16} className="text-teal-600 shrink-0" />
+            <Clock size={16} className="text-sky-600 shrink-0" />
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Session Duration</p>
               <p className="text-sm font-mono font-bold text-slate-700">{elapsed}</p>
@@ -191,7 +228,7 @@ export const SettingsModal: React.FC<Props> = ({
                       value={form.firstName}
                       onChange={e => setForm(prev => ({ ...prev, firstName: e.target.value }))}
                       placeholder="e.g. Sarah"
-                      className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition ${!form.firstName.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
+                      className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition ${!form.firstName.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
                     />
                   </div>
                   <div>
@@ -201,7 +238,7 @@ export const SettingsModal: React.FC<Props> = ({
                       value={form.lastName}
                       onChange={e => setForm(prev => ({ ...prev, lastName: e.target.value }))}
                       placeholder="e.g. Connor"
-                      className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition ${!form.lastName.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
+                      className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition ${!form.lastName.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
                     />
                   </div>
                 </div>
@@ -212,7 +249,7 @@ export const SettingsModal: React.FC<Props> = ({
                     value={form.profession}
                     onChange={e => setForm(prev => ({ ...prev, profession: e.target.value }))}
                     placeholder="e.g. Physiotherapist, General Practitioner"
-                    className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition ${!form.profession.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
+                    className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition ${!form.profession.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
                   />
                 </div>
                 <div>
@@ -222,7 +259,7 @@ export const SettingsModal: React.FC<Props> = ({
                     value={form.department}
                     onChange={e => setForm(prev => ({ ...prev, department: e.target.value }))}
                     placeholder="e.g. Orthopaedics, Cardiology, General Practice"
-                    className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition ${!form.department.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
+                    className={`w-full px-3 py-2.5 rounded-lg border text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition ${!form.department.trim() ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200'}`}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -233,7 +270,7 @@ export const SettingsModal: React.FC<Props> = ({
                       value={form.city}
                       onChange={e => setForm(prev => ({ ...prev, city: e.target.value }))}
                       placeholder="e.g. Cape Town"
-                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition"
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition"
                     />
                   </div>
                   <div>
@@ -243,7 +280,7 @@ export const SettingsModal: React.FC<Props> = ({
                       value={form.postalCode}
                       onChange={e => setForm(prev => ({ ...prev, postalCode: e.target.value }))}
                       placeholder="e.g. 8001"
-                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition"
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition"
                     />
                   </div>
                 </div>
@@ -254,7 +291,7 @@ export const SettingsModal: React.FC<Props> = ({
                     value={form.university}
                     onChange={e => setForm(prev => ({ ...prev, university: e.target.value }))}
                     placeholder="e.g. University of Cape Town"
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition"
                   />
                 </div>
                 {requiredFieldsMissing && (
@@ -266,12 +303,12 @@ export const SettingsModal: React.FC<Props> = ({
                 {hasProfile ? (
                   <div className="divide-y divide-slate-100">
                     <div className="px-4 py-3 flex items-center gap-3">
-                      <div className="w-9 h-9 bg-teal-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                      <div className="w-9 h-9 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
                         {(form.firstName?.[0] || '').toUpperCase()}{(form.lastName?.[0] || '').toUpperCase()}
                       </div>
                       <div>
                         <p className="font-semibold text-slate-800 text-sm">{displayName}</p>
-                        {form.profession && <p className="text-xs text-teal-600 font-medium">{form.profession}</p>}
+                        {form.profession && <p className="text-xs text-sky-600 font-medium">{form.profession}</p>}
                         {form.department && <p className="text-xs text-slate-500">{form.department}</p>}
                       </div>
                     </div>
@@ -293,7 +330,7 @@ export const SettingsModal: React.FC<Props> = ({
                     <p className="text-sm text-slate-400">No profile information set</p>
                     <button
                       onClick={() => setEditMode(true)}
-                      className="mt-2 text-xs font-semibold text-teal-600 hover:text-teal-700"
+                      className="mt-2 text-xs font-semibold text-sky-600 hover:text-sky-700"
                     >
                       Set up your profile
                     </button>
@@ -303,110 +340,106 @@ export const SettingsModal: React.FC<Props> = ({
             )}
           </div>
 
-          {/* Template Section */}
+          {/* Note templates: current templates + default + request new */}
           <div className="border-t border-slate-100 pt-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-              <FileText size={12} /> Documentation Template
+              <FileText size={12} /> Note templates
             </h3>
-            <p className="text-xs text-slate-400 mb-3">Choose how HALO generates clinical notes from scribe dictation.</p>
+            <p className="text-xs text-slate-400 mb-3">Templates used when generating notes from scribe dictation (Halo Functions API).</p>
 
-            <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
-              <button
-                onClick={() => { setTemplateTab('soap'); setForm(prev => ({ ...prev, noteTemplate: 'soap' })); }}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  templateTab === 'soap' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {templateTab === 'soap' && <Check size={12} />} SOAP Note
-              </button>
-              <button
-                onClick={() => setTemplateTab('custom')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  templateTab === 'custom' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {templateTab === 'custom' && <Check size={12} />} Custom Template
-              </button>
+            <p className="text-xs text-slate-600 mb-2">You have access to:</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {HALO_TEMPLATE_OPTIONS.map(t => (
+                <span
+                  key={t.id}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200"
+                >
+                  {t.name}
+                </span>
+              ))}
             </div>
 
-            {templateTab === 'soap' ? (
-              <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
-                <p className="text-sm font-semibold text-teal-800 mb-1">SOAP Note Format</p>
-                <p className="text-xs text-teal-600 leading-relaxed">
-                  Notes will be structured as: <strong>Subjective</strong>, <strong>Objective</strong>, <strong>Assessment</strong>, <strong>Plan</strong> -- 
-                  the standard clinical documentation method.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {form.customTemplateContent ? (
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <FileText size={14} className="text-teal-600" />
-                        <p className="text-sm font-semibold text-slate-700">{form.customTemplateName}</p>
-                      </div>
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="text-xs font-medium text-teal-600 hover:text-teal-700"
-                      >
-                        Replace
-                      </button>
-                    </div>
-                    <div className="bg-white border border-slate-100 rounded-lg p-3 max-h-32 overflow-y-auto">
-                      <pre className="text-xs text-slate-600 whitespace-pre-wrap font-mono">{form.customTemplateContent.substring(0, 500)}{form.customTemplateContent.length > 500 ? '...' : ''}</pre>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full border-2 border-dashed border-slate-200 hover:border-teal-300 rounded-xl p-6 text-center transition-colors group"
-                  >
-                    <Upload size={24} className="mx-auto text-slate-300 group-hover:text-teal-400 mb-2 transition-colors" />
-                    <p className="text-sm font-semibold text-slate-500 group-hover:text-teal-600 transition-colors">Upload Template</p>
-                    <p className="text-xs text-slate-400 mt-1">.txt or .md files recommended</p>
-                  </button>
-                )}
-
-                {uploadError && (
-                  <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                    <AlertCircle size={14} />
-                    {uploadError}
-                  </div>
-                )}
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.md"
-                  onChange={handleTemplateUpload}
-                  className="hidden"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Run conversions now */}
-          <div className="pt-2 border-t border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Note conversions</p>
-            <p className="text-xs text-slate-500 mb-2">Run the scheduler now to convert any notes that are past the 10h (→ .docx) or 24h (→ .pdf) mark.</p>
-            <button
-              type="button"
-              onClick={handleRunScheduler}
-              disabled={schedulerRunning}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 hover:bg-teal-50 text-slate-700 hover:text-teal-700 text-sm font-medium transition disabled:opacity-50"
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Default template</label>
+            <select
+              value={form.templateId || 'clinical_note'}
+              onChange={(e) => setForm(prev => ({ ...prev, templateId: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none shadow-sm"
             >
-              <RefreshCw size={14} className={schedulerRunning ? 'animate-spin' : ''} />
-              {schedulerRunning ? 'Running...' : 'Run conversions now'}
-            </button>
-            {schedulerMessage && (
-              <p className="text-xs text-slate-600 mt-2">{schedulerMessage}</p>
+              {HALO_TEMPLATE_OPTIONS.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+
+            {!showRequestForm ? (
+              <button
+                type="button"
+                onClick={() => setShowRequestForm(true)}
+                className="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-sky-200 transition shadow-sm"
+              >
+                <Plus size={16} /> Request new template
+              </button>
+            ) : (
+              <div className="mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
+                <p className="text-xs font-semibold text-slate-600">Request a new template</p>
+                <p className="text-xs text-slate-500">Describe the template you need and optionally attach example documents. The request will be sent to admin@halo.africa.</p>
+                <textarea
+                  value={requestDescription}
+                  onChange={(e) => setRequestDescription(e.target.value)}
+                  placeholder="Describe the template contents / structure (e.g. sections, fields)..."
+                  rows={4}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none resize-none"
+                />
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Example documents (optional)</label>
+                  <input
+                    ref={requestFileInputRef}
+                    type="file"
+                    multiple
+                    accept=".txt,.md,.doc,.docx,application/pdf"
+                    onChange={(e) => setRequestFiles(Array.from(e.target.files || []))}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => requestFileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+                  >
+                    <Upload size={14} /> {requestFiles.length ? `${requestFiles.length} file(s) chosen` : 'Choose files'}
+                  </button>
+                  {requestFiles.length > 0 && (
+                    <ul className="mt-1 text-xs text-slate-500 list-disc list-inside">
+                      {requestFiles.map((f, i) => (
+                        <li key={i}>{f.name}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowRequestForm(false); setRequestDescription(''); setRequestFiles([]); }}
+                    disabled={requestSending}
+                    className="px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRequestTemplateSubmit}
+                    disabled={requestSending || !requestDescription.trim()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 transition"
+                  >
+                    {requestSending ? 'Sending…' : <><Send size={14} /> Send request</>}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
+
         </div>
 
         {/* Footer with Save */}
-        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') ? (
+        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') || form.templateId !== (settings?.templateId || 'clinical_note') ? (
           <div className="border-t border-slate-100 p-4 bg-slate-50 flex gap-3">
             <button
               onClick={() => {
@@ -421,7 +454,7 @@ export const SettingsModal: React.FC<Props> = ({
             <button
               onClick={handleSave}
               disabled={saving || (editMode && requiredFieldsMissing)}
-              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl font-bold shadow-lg shadow-teal-600/20 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2.5 rounded-xl font-bold shadow-lg shadow-sky-600/20 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <Save size={14} /> {saving ? 'Saving...' : 'Save Changes'}
             </button>

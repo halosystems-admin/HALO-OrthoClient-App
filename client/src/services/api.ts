@@ -1,4 +1,4 @@
-import type { Patient, DriveFile, LabAlert, ChatMessage, UserSettings } from '../../../shared/types';
+import type { Patient, DriveFile, LabAlert, ChatMessage, UserSettings, HaloNote } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -14,14 +14,26 @@ export class ApiError extends Error {
 }
 
 async function request<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
+  const url = `${API_BASE}${path}`;
+  console.log(`[API] Making request to: ${url}`);
+  
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    console.error('[API] Network error:', error);
+    throw new ApiError(
+      `Failed to connect to server. Make sure the server is running on port 3000. ${error instanceof Error ? error.message : 'Unknown error'}`,
+      0
+    );
+  }
 
   if (res.status === 401) {
     window.location.href = '/';
@@ -32,6 +44,8 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
   try {
     data = await res.json();
   } catch {
+    const text = await res.text().catch(() => 'Unable to read response');
+    console.error('[API] Non-JSON response:', text);
     throw new ApiError(
       `Server returned a non-JSON response (${res.status}). Please try again.`,
       res.status
@@ -40,6 +54,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 
   if (!res.ok) {
     const message = (data as { error?: string }).error || `Request failed (${res.status})`;
+    console.error('[API] Request failed:', message);
     throw new ApiError(message, res.status);
   }
 
@@ -60,6 +75,16 @@ export const getSchedulerStatus = () =>
   request<{ totalPending: number; totalDue: number; jobs: Array<{ fileId: string; status: string; savedAt: string }> }>(
     '/api/drive/scheduler-status'
   );
+
+/** Send a new template request to admin (description + optional file attachments as base64) */
+export const requestNewTemplate = (params: {
+  description: string;
+  attachments?: Array<{ name: string; content: string }>;
+}) =>
+  request<{ ok: boolean; message: string }>('/api/request-template', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
 
 // --- PATIENTS (paginated) ---
 interface PatientsResponse {
@@ -108,6 +133,29 @@ interface FilesResponse {
   nextPage: string | null;
 }
 
+/** Fetch first page of files only (for fast initial render). Returns { files, nextPage }. */
+export const fetchFilesFirstPage = async (
+  patientId: string,
+  pageSize = 100
+): Promise<{ files: DriveFile[]; nextPage: string | null }> => {
+  const data = await request<FilesResponse>(
+    `/api/drive/patients/${patientId}/files?pageSize=${pageSize}`
+  );
+  return { files: data.files || [], nextPage: data.nextPage ?? null };
+};
+
+/** Fetch a single page of files by token (for pagination). */
+export const fetchFilesPage = async (
+  patientId: string,
+  pageToken: string
+): Promise<{ files: DriveFile[]; nextPage: string | null }> => {
+  const data = await request<FilesResponse>(
+    `/api/drive/patients/${patientId}/files?pageSize=100&page=${encodeURIComponent(pageToken)}`
+  );
+  return { files: data.files || [], nextPage: data.nextPage ?? null };
+};
+
+/** Fetch all pages of files (can be slow for large folders). */
 export const fetchFiles = async (patientId: string): Promise<DriveFile[]> => {
   const all: DriveFile[] = [];
   let page: string | undefined;
@@ -165,12 +213,6 @@ export const getFileDownloadUrl = (fileId: string) =>
     `/api/drive/files/${fileId}/download`
   );
 
-export const saveNote = (patientId: string, content: string) =>
-  request<{ success: boolean; folderId?: string }>(`/api/drive/patients/${patientId}/note`, {
-    method: 'POST',
-    body: JSON.stringify({ content }),
-  });
-
 export const createFolder = (parentId: string, name: string) =>
   request<DriveFile>(`/api/drive/patients/${parentId}/folder`, {
     method: 'POST',
@@ -200,13 +242,48 @@ export const analyzeAndRenameImage = async (base64Image: string): Promise<string
   return data.filename;
 };
 
-export const transcribeToSOAP = async (audioBase64: string, mimeType: string, customTemplate?: string): Promise<string> => {
-  const data = await request<{ soapNote: string }>('/api/ai/transcribe', {
+/** Transcribe audio to text only (no SOAP/note generation). Use Halo generate_note for notes. */
+export const transcribeAudio = async (audioBase64: string, mimeType: string): Promise<string> => {
+  const data = await request<{ transcript: string }>('/api/ai/transcribe', {
     method: 'POST',
-    body: JSON.stringify({ audioBase64, mimeType, customTemplate }),
+    body: JSON.stringify({ audioBase64, mimeType }),
   });
-  return data.soapNote;
+  return data.transcript ?? '';
 };
+
+// --- Halo API (note generation + templates) ---
+export const getHaloTemplates = (userId?: string) =>
+  request<Record<string, unknown>>('/api/halo/templates', {
+    method: 'POST',
+    body: JSON.stringify(userId ? { user_id: userId } : {}),
+  });
+
+/** Generate note preview (return_type=note). Returns normalized notes array. */
+export const generateNotePreview = (params: { template_id: string; text: string; user_id?: string }) =>
+  request<{ notes: HaloNote[] }>('/api/halo/generate-note', {
+    method: 'POST',
+    body: JSON.stringify({ ...params, return_type: 'note' }),
+  });
+
+/** Generate DOCX and save to patient folder on Drive. Returns { success, fileId, name }. */
+export const saveNoteAsDocx = (params: {
+  patientId: string;
+  template_id: string;
+  text: string;
+  fileName?: string;
+  user_id?: string;
+}) =>
+  request<{ success: boolean; fileId: string; name: string }>('/api/halo/generate-note', {
+    method: 'POST',
+    body: JSON.stringify({
+      template_id: params.template_id,
+      text: params.text,
+      return_type: 'docx',
+      patientId: params.patientId,
+      fileName: params.fileName,
+      user_id: params.user_id,
+    }),
+  });
 
 export const searchPatientsByConcept = async (
   query: string,

@@ -1,8 +1,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../config';
 
-const TEXT_MODEL = 'gemini-3-pro-preview';
-const VISION_MODEL = 'gemini-3-pro-preview';
+// Using gemini-flash-latest - this model has free tier access (15 RPM)
+// Alternative: 'gemini-pro-latest' (also has free tier, but slower)
+const TEXT_MODEL = 'gemini-flash-latest';
+const VISION_MODEL = 'gemini-flash-latest';
 const MAX_RETRIES = 2;
 const BASE_RETRY_DELAY_MS = 2000;
 /** Timeout for Gemini API calls (15–50s typical; allow up to 90s including retries) */

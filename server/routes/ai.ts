@@ -9,7 +9,6 @@ import {
   imageAnalysisPrompt,
   searchPrompt,
   chatSystemPrompt,
-  soapNotePrompt,
   geminiTranscriptionPrompt,
 } from '../utils/prompts';
 
@@ -287,13 +286,12 @@ router.post('/chat', async (req: Request, res: Response) => {
   }
 });
 
-// POST /transcribe
+// POST /transcribe — returns transcript only (no SOAP/note generation; use Halo generate_note for notes)
 router.post('/transcribe', async (req: Request, res: Response) => {
   try {
-    const { audioBase64, mimeType, customTemplate } = req.body as {
+    const { audioBase64, mimeType } = req.body as {
       audioBase64?: string;
       mimeType?: string;
-      customTemplate?: string;
     };
 
     if (!audioBase64 || typeof audioBase64 !== 'string') {
@@ -305,26 +303,28 @@ router.post('/transcribe', async (req: Request, res: Response) => {
     const audioBuffer = Buffer.from(cleanBase64, 'base64');
     const audioMime = mimeType || 'audio/webm';
 
-    // Fallback to Gemini if Deepgram is not available
     if (!isDeepgramAvailable()) {
       console.log('Deepgram key not set, falling back to Gemini for transcription');
-      const soapNote = await transcribeAudio(geminiTranscriptionPrompt(customTemplate), cleanBase64, audioMime);
-      res.json({ soapNote, rawTranscript: '' });
+      const transcript = await transcribeAudio(
+        geminiTranscriptionPrompt(undefined),
+        cleanBase64,
+        audioMime
+      );
+      res.json({ transcript: transcript || '', rawTranscript: transcript || '' });
       return;
     }
 
     const transcript = await transcribeWithDeepgram(audioBuffer, audioMime);
 
     if (!transcript) {
-      res.json({ soapNote: 'Error: No speech detected in audio.' });
+      res.status(400).json({ error: 'No speech detected in audio.' });
       return;
     }
 
-    const soapNote = await generateText(soapNotePrompt(transcript, customTemplate));
-    res.json({ soapNote, rawTranscript: transcript });
+    res.json({ transcript, rawTranscript: transcript });
   } catch (err) {
     console.error('Transcribe error:', err);
-    res.json({ soapNote: 'Error: Could not transcribe audio.' });
+    res.status(500).json({ error: 'Could not transcribe audio.' });
   }
 });
 

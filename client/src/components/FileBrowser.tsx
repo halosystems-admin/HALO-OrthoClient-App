@@ -54,7 +54,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
           {!isAtRoot && (
             <button
               onClick={onNavigateBack}
-              className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors mr-1"
+              className="p-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors mr-1"
               title="Go back"
             >
               <ChevronLeft size={18} />
@@ -67,8 +67,8 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                 onClick={() => onNavigateToBreadcrumb(index)}
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
                   index === breadcrumbs.length - 1
-                    ? 'text-teal-700 bg-teal-50'
-                    : 'text-slate-500 hover:text-teal-600 hover:bg-slate-100'
+                    ? 'text-sky-700 bg-sky-50'
+                    : 'text-slate-500 hover:text-sky-600 hover:bg-slate-100'
                 }`}
               >
                 {index === 0 && <Home size={13} className="shrink-0" />}
@@ -79,7 +79,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         </div>
         <button
           onClick={onCreateFolder}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
         >
           <FolderPlus size={15} /> New Folder
         </button>
@@ -93,8 +93,8 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
           <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-lg">
             {status === AppStatus.UPLOADING ? (
               <div className="flex flex-col items-center gap-3">
-                <CloudUpload className="w-12 h-12 text-teal-200 animate-bounce" />
-                <p className="text-teal-600 font-medium">Adding file to drive...</p>
+                <CloudUpload className="w-12 h-12 text-sky-200 animate-bounce" />
+                <p className="text-sky-600 font-medium">Adding file to drive...</p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2">
@@ -116,25 +116,25 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                 {folders.map(folder => (
                   <div
                     key={folder.id}
-                    className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer"
+                    className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-sky-200 transition-all duration-200 cursor-pointer"
                     onClick={() => onNavigateToFolder(folder)}
                   >
-                    <div className="p-3 rounded-lg mr-4 bg-teal-100 text-teal-600">
+                    <div className="p-3 rounded-lg mr-4 bg-sky-100 text-sky-600">
                       <FolderOpen className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 group-hover:text-teal-700 transition-colors truncate">{folder.name}</h4>
+                      <h4 className="font-semibold text-slate-800 group-hover:text-sky-700 transition-colors truncate">{folder.name}</h4>
                       <p className="text-xs text-slate-500 mt-1">Folder &bull; {folder.createdTime}</p>
                     </div>
                     <div className="flex items-center gap-1">
                       <button
                         onClick={(e) => { e.stopPropagation(); onStartEditFile(folder); }}
-                        className="p-2 text-slate-400 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                        className="p-2 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                         title="Rename"
                       >
                         <Pencil size={16} />
                       </button>
-                      <ChevronRight size={18} className="text-slate-300 group-hover:text-teal-500 transition-colors" />
+                      <ChevronRight size={18} className="text-slate-300 group-hover:text-sky-500 transition-colors" />
                     </div>
                   </div>
                 ))}
@@ -161,25 +161,25 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                     : isPdf ? FileText
                     : File;
                   return (
-                    <div key={file.id} className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-teal-200 transition-all duration-200">
+                    <div key={file.id} className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-sky-200 transition-all duration-200">
                       <div className={`p-3 rounded-lg mr-4 ${iconClass}`}>
                         <IconComponent className="w-5 h-5" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-slate-800 group-hover:text-teal-700 transition-colors truncate">{file.name}</h4>
+                        <h4 className="font-semibold text-slate-800 group-hover:text-sky-700 transition-colors truncate">{file.name}</h4>
                         <p className="text-xs text-slate-500 mt-1 truncate">{file.createdTime} &bull; {getFriendlyFileType(file.mimeType)}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => onStartEditFile(file)} className="p-2 text-slate-400 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Rename">
+                        <button onClick={() => onStartEditFile(file)} className="p-2 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Rename">
                           <Pencil size={16} />
                         </button>
                         <button onClick={() => onDeleteFile(file)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Delete">
                           <Trash2 size={16} />
                         </button>
-                        <button onClick={() => onViewFile(file)} className="hidden sm:flex items-center gap-1.5 text-sm bg-slate-50 text-slate-600 px-3 py-1.5 rounded-md font-medium hover:bg-teal-50 hover:text-teal-700 transition-colors" title="Preview">
+                        <button onClick={() => onViewFile(file)} className="hidden sm:flex items-center gap-1.5 text-sm bg-slate-50 text-slate-600 px-3 py-1.5 rounded-md font-medium hover:bg-sky-50 hover:text-sky-700 transition-colors" title="Preview">
                           <Eye size={14} /> View
                         </button>
-                        <a href={file.url} target="_blank" rel="noreferrer" className="p-2 text-slate-400 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Open in new tab">
+                        <a href={file.url} target="_blank" rel="noreferrer" className="p-2 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Open in new tab">
                           <ExternalLink size={16} />
                         </a>
                       </div>

@@ -1,14 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Wand2 } from 'lucide-react';
-import { transcribeToSOAP } from '../../services/api';
+import { transcribeAudio } from '../../services/api';
 
 interface Props {
-  onTranscriptionComplete: (text: string) => void;
+  onTranscriptionComplete: (transcript: string) => void;
   onError?: (message: string) => void;
-  customTemplate?: string;
 }
 
-export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onError, customTemplate }) => {
+export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onError }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [longWait, setLongWait] = useState(false);
@@ -70,8 +69,8 @@ export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onEr
             try {
               const base64Data = (reader.result as string).split(',')[1];
               if (base64Data) {
-                const soapNote = await transcribeToSOAP(base64Data, recordingMimeType.current, customTemplate);
-                onTranscriptionComplete(soapNote);
+                const transcript = await transcribeAudio(base64Data, recordingMimeType.current);
+                onTranscriptionComplete(transcript);
               }
             } catch (err) {
               onError?.(`Transcription failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -111,10 +110,10 @@ export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onEr
 
       {/* Processing indicator pill */}
       {isProcessing && (
-        <div className="bg-white border border-teal-200 shadow-lg rounded-full px-3 py-1.5 flex flex-col items-end gap-1">
+        <div className="bg-white border border-sky-200 shadow-lg rounded-full px-3 py-1.5 flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
-            <Wand2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
-            <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Scribing...</span>
+            <Wand2 className="w-3.5 h-3.5 text-sky-500 animate-spin" />
+            <span className="text-[11px] font-bold text-sky-700 uppercase tracking-wider">Scribing...</span>
           </div>
           {longWait && (
             <span className="text-[9px] text-slate-500">This may take 15–60 seconds.</span>
@@ -132,7 +131,7 @@ export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onEr
             ? 'w-12 h-12 bg-red-500 hover:bg-red-600 text-white ring-4 ring-red-200 animate-pulse'
             : isProcessing
               ? 'w-12 h-12 bg-slate-200 text-slate-400 cursor-not-allowed'
-              : 'w-12 h-12 bg-teal-600 hover:bg-teal-700 text-white hover:scale-110 active:scale-95 hover:shadow-xl'
+              : 'w-12 h-12 bg-sky-600 hover:bg-sky-700 text-white hover:scale-110 active:scale-95 hover:shadow-xl'
         }`}
       >
         {isProcessing ? (

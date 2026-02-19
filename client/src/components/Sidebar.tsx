@@ -86,13 +86,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       onClick={() => onSelectPatient(patient.id)}
       className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border border-transparent mb-1 ${
         selectedPatientId === patient.id
-          ? 'bg-teal-600/10 border-teal-500/30 text-teal-400 shadow-sm'
+          ? 'bg-sky-600/10 border-sky-500/30 text-sky-400 shadow-sm'
           : 'hover:bg-slate-800 hover:border-slate-700/50 hover:text-slate-100'
       }`}
     >
       <div className="flex items-center gap-3 overflow-hidden">
         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${
-          selectedPatientId === patient.id ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700 group-hover:text-white'
+          selectedPatientId === patient.id ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700 group-hover:text-white'
         }`}>
           {patient.name.charAt(0)}
         </div>
@@ -121,36 +121,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-6">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-teal-900/20">
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-sky-900/20">
               <img src="/halo-icon.png" alt="HALO" className="w-full h-full object-cover" draggable={false} />
             </div>
             <div>
               <h1 className="font-bold text-white text-lg tracking-tight">HALO</h1>
-              <p className="text-xs text-teal-500 font-bold tracking-wider">PATIENT DRIVE</p>
+              <p className="text-xs text-sky-500 font-bold tracking-wider">PATIENT DRIVE</p>
             </div>
           </div>
           <button
             onClick={onOpenSettings}
-            className="p-2 rounded-lg text-slate-500 hover:text-teal-400 hover:bg-slate-800 transition-all"
+            className="p-2 rounded-lg text-slate-500 hover:text-sky-400 hover:bg-slate-800 transition-all"
             title="Settings & Profile"
           >
             <Settings size={20} />
           </button>
         </div>
         <div className="relative group">
-          <Search className="absolute left-3 top-3 text-slate-500 group-focus-within:text-teal-400 transition-colors" size={18} />
+          <Search className="absolute left-3 top-3 text-slate-500 group-focus-within:text-sky-400 transition-colors" size={18} />
           <input
             type="text"
             placeholder="Search name, DOB, or condition..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-800/50 focus:bg-slate-800 text-sm pl-10 pr-4 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-teal-500/50 border border-transparent focus:border-teal-500/30 transition-all placeholder:text-slate-600"
+            className="w-full bg-slate-800/50 focus:bg-slate-800 text-sm pl-10 pr-4 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-sky-500/50 border border-transparent focus:border-sky-500/30 transition-all placeholder:text-slate-600"
           />
         </div>
         {isAiSearching && searchTerm.length >= 3 && (
           <div className="flex items-center gap-2 mt-2 px-1">
-            <Loader2 size={12} className="text-teal-500 animate-spin" />
-            <span className="text-[10px] text-teal-500 font-medium uppercase tracking-wider">Scanning patient records...</span>
+            <Loader2 size={12} className="text-sky-500 animate-spin" />
+            <span className="text-[10px] text-sky-500 font-medium uppercase tracking-wider">Scanning patient records...</span>
           </div>
         )}
       </div>
@@ -159,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {!searchTerm && patients.length > 0 && (
           <div className="mb-6">
             <div className="flex items-center gap-2 px-2 mb-2">
-              <Clock size={12} className="text-teal-500"/>
+              <Clock size={12} className="text-sky-500"/>
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recent Activity</h3>
             </div>
             {recentPatients.map(p => renderPatientRow(p, 'recent'))}
@@ -168,7 +168,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
         <div>
           <div className="flex items-center gap-2 px-2 mb-2">
-            <Users size={12} className={searchTerm ? "text-teal-500" : "text-slate-500"}/>
+            <Users size={12} className={searchTerm ? "text-sky-500" : "text-slate-500"}/>
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
               {searchTerm ? 'Search Results' : 'All Patients'}
               <span className="ml-1 opacity-60">({filteredPatients.length})</span>
@@ -183,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="p-4 border-t border-slate-800 bg-slate-900/50 backdrop-blur-sm z-10">
-        <button onClick={onCreatePatient} className="w-full bg-teal-600 hover:bg-teal-500 text-white p-3.5 rounded-xl font-bold transition-all shadow-lg shadow-teal-900/20 flex items-center justify-center gap-2 mb-3 active:scale-[0.98]">
+        <button onClick={onCreatePatient} className="w-full bg-sky-600 hover:bg-sky-500 text-white p-3.5 rounded-xl font-bold transition-all shadow-lg shadow-sky-900/20 flex items-center justify-center gap-2 mb-3 active:scale-[0.98]">
           <Plus size={20} /> New Patient Folder
         </button>
         <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-300 py-2 transition-colors">

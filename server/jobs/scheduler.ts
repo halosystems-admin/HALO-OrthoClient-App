@@ -297,10 +297,11 @@ async function convertDocxToPdf(token: string, docxFileId: string, parentFolderI
 
 /**
  * Process all pending jobs.
- * For each due job, refreshes the access token before making Drive API calls.
- * Jobs that exceed MAX_RETRIES are removed from the queue.
+ * NOTE: Note conversion (txt→docx→pdf) is disabled; notes are now generated
+ * via Halo Functions API and saved as DOCX directly. This loop is a no-op.
  */
 async function processJobs(): Promise<void> {
+  return; // Disabled: no longer converting .txt notes to docx/pdf
   const now = Date.now();
 
   for (const [fileId, job] of jobQueue.entries()) {
@@ -361,9 +362,10 @@ async function processJobs(): Promise<void> {
         const fileInfo = (await fileInfoRes.json()) as { name: string };
         const baseName = fileInfo.name.replace('.docx', '');
 
+        const docxId = job.docxFileId!;
         const pdfFileId = await convertDocxToPdf(
           token,
-          job.docxFileId,
+          docxId,
           job.patientFolderId,
           baseName
         );
@@ -389,7 +391,7 @@ async function processJobs(): Promise<void> {
       job.retryCount = (job.retryCount || 0) + 1;
       console.error(`[Scheduler] Error processing job for file ${fileId} (attempt ${job.retryCount}/${MAX_RETRIES}):`, err);
 
-      if (job.retryCount >= MAX_RETRIES) {
+      if ((job.retryCount ?? 0) >= MAX_RETRIES) {
         console.error(`[Scheduler] Job ${fileId} exceeded max retries — removing from queue`);
         jobQueue.delete(fileId);
       }

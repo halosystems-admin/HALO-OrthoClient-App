@@ -57,8 +57,32 @@ export interface UserSettings {
   city: string;
   postalCode: string;
   university: string;
-  // Template
+  // Template (legacy)
   noteTemplate: 'soap' | 'custom';
   customTemplateContent: string;
   customTemplateName: string;
+  // Halo template (for generate_note)
+  templateId?: string;
+}
+
+export interface NoteField {
+  label: string;
+  body: string;
+}
+
+export interface HaloNote {
+  noteId: string;
+  title: string;
+  content: string;
+  template_id: string;
+  lastSavedAt?: string;
+  dirty?: boolean;
+  /** Structured fields from generate_note (for preview before DOCX) */
+  fields?: NoteField[];
+}
+
+export interface HaloTemplate {
+  id: string;
+  name?: string;
+  [key: string]: unknown;
 }

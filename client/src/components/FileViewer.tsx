@@ -126,7 +126,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({ fileId, fileName, mimeTy
     if (loading) {
       return (
         <div className="flex flex-col items-center justify-center h-full gap-4">
-          <Loader2 className="w-10 h-10 text-teal-500 animate-spin" />
+          <Loader2 className="w-10 h-10 text-sky-500 animate-spin" />
           <p className="text-slate-500 text-sm font-medium">Loading preview...</p>
         </div>
       );
@@ -141,7 +141,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({ fileId, fileName, mimeTy
             href={fileUrl}
             target="_blank"
             rel="noreferrer"
-            className="text-sm text-teal-600 hover:text-teal-700 underline"
+            className="text-sm text-sky-600 hover:text-sky-700 underline"
           >
             Open in Google Drive instead
           </a>
@@ -159,7 +159,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({ fileId, fileName, mimeTy
             href={fileUrl}
             target="_blank"
             rel="noreferrer"
-            className="mt-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition flex items-center gap-2 text-sm font-semibold"
+            className="mt-2 px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition flex items-center gap-2 text-sm font-semibold"
           >
             <ExternalLink size={16} /> Open in New Tab
           </a>
@@ -210,7 +210,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({ fileId, fileName, mimeTy
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50 rounded-t-2xl shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <FileText size={18} className="text-teal-600 shrink-0" />
+            <FileText size={18} className="text-sky-600 shrink-0" />
             <h3 className="font-semibold text-slate-800 truncate">{fileName}</h3>
             <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
               {mimeType.split('/').pop()?.toUpperCase() || 'FILE'}
@@ -221,7 +221,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({ fileId, fileName, mimeTy
               href={fileUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition"
               title="Open in new tab"
             >
               <ExternalLink size={15} /> New Tab

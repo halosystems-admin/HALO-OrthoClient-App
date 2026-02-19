@@ -85,7 +85,6 @@ npm start
 | DELETE | `/api/drive/patients/:id` | Trash patient folder |
 | GET | `/api/drive/patients/:id/files` | List files (paginated) |
 | POST | `/api/drive/patients/:id/upload` | Upload file |
-| POST | `/api/drive/patients/:id/note` | Save clinical note |
 | PATCH | `/api/drive/files/:fileId` | Rename file |
 | DELETE | `/api/drive/files/:fileId` | Trash file |
 | GET | `/api/drive/files/:fileId/download` | Get download URL |
@@ -97,7 +96,9 @@ npm start
 | POST | `/api/ai/lab-alerts` | Extract lab alerts |
 | POST | `/api/ai/analyze-image` | Analyze medical image |
 | POST | `/api/ai/search` | Semantic patient search |
-| POST | `/api/ai/transcribe` | Audio → SOAP note |
+| POST | `/api/ai/transcribe` | Audio → transcript only |
+| POST | `/api/halo/templates` | Get Halo note templates |
+| POST | `/api/halo/generate-note` | Generate note (preview) or DOCX and save to Drive |
 
 ## Project Structure
 
