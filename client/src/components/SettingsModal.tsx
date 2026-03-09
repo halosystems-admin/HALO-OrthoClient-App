@@ -7,9 +7,7 @@ import {
 import { requestNewTemplate } from '../services/api';
 
 const HALO_TEMPLATE_OPTIONS = [
-  { id: 'clinical_note', name: 'Clinical Note' },
-  { id: 'op_report', name: 'Operation Report' },
-  { id: 'jon_note', name: 'Open Note' },
+  { id: 'ortho_consult', name: 'Ortho Consult' },
 ];
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -23,7 +21,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   noteTemplate: 'soap',
   customTemplateContent: '',
   customTemplateName: '',
-  templateId: 'clinical_note',
+  templateId: 'ortho_consult',
 };
 
 interface Props {
@@ -82,7 +80,7 @@ export const SettingsModal: React.FC<Props> = ({
     if (editMode && requiredFieldsMissing) return;
     setSaving(true);
     try {
-      const updated = { ...form, noteTemplate: templateTab, templateId: form.templateId || 'clinical_note' };
+      const updated = { ...form, noteTemplate: templateTab, templateId: form.templateId || 'ortho_consult' };
       await onSave(updated);
       setForm(updated);
       setEditMode(false);
@@ -361,7 +359,7 @@ export const SettingsModal: React.FC<Props> = ({
 
             <label className="block text-xs font-semibold text-slate-500 mb-1.5">Default template</label>
             <select
-              value={form.templateId || 'clinical_note'}
+              value={form.templateId || 'ortho_consult'}
               onChange={(e) => setForm(prev => ({ ...prev, templateId: e.target.value }))}
               className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none shadow-sm"
             >
@@ -439,7 +437,7 @@ export const SettingsModal: React.FC<Props> = ({
         </div>
 
         {/* Footer with Save */}
-        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') || form.templateId !== (settings?.templateId || 'clinical_note') ? (
+        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') || form.templateId !== (settings?.templateId || 'ortho_consult') ? (
           <div className="border-t border-slate-100 p-4 bg-slate-50 flex gap-3">
             <button
               onClick={() => {

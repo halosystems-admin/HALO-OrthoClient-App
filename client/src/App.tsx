@@ -245,7 +245,7 @@ export const App = () => {
             onBack={() => selectPatient(null)}
             onDataChange={refreshPatients}
             onToast={showToast}
-            templateId={userSettings?.templateId || 'clinical_note'}
+            templateId={userSettings?.templateId || 'ortho_consult'}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-300 relative overflow-hidden">

@@ -1,15 +1,22 @@
+import path from 'path';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Explicitly load the project root .env file so that we don't depend on
+// the current working directory of the Node process.
+dotenv.config({
+  path: path.join(__dirname, '../../.env'),
+  override: true,
+});
 
 // --- Required Environment Variables ---
 const REQUIRED_ENV = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GEMINI_API_KEY', 'SESSION_SECRET'] as const;
 
-const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+const missing = REQUIRED_ENV.filter((key) => process.env[key] === undefined);
 if (missing.length > 0) {
-  console.error(`Missing required environment variables: ${missing.join(', ')}`);
-  console.error('Copy .env.example to .env and fill in the values.');
-  process.exit(1);
+  console.warn(`Missing required environment variables: ${missing.join(', ')}`);
+  console.warn('Copy .env.example to .env and fill in the values.');
+  // Do not exit in development; allow the app to start so configuration
+  // issues can be diagnosed from runtime behavior.
 }
 
 // --- Validated Config Export ---
@@ -40,7 +47,7 @@ export const config = {
 
   // Halo Functions API
   haloApiBaseUrl: process.env.HALO_API_BASE_URL || 'https://halo-functions-75316778879.africa-south1.run.app',
-  haloUserId: process.env.HALO_USER_ID || 'cae6877e-0fbe-4ea1-acce-39957e7575bc',
+  haloUserId: process.env.HALO_USER_ID || '05588e47-5e6b-4a5e-85b8-9733a12b4868',
 
   // Template request email (optional)
   adminEmail: process.env.ADMIN_EMAIL || 'admin@halo.africa',

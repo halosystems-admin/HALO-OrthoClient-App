@@ -23,9 +23,7 @@ import { PatientChat } from '../components/PatientChat';
 import { getErrorMessage } from '../utils/formatting';
 
 const HALO_TEMPLATE_OPTIONS = [
-  { id: 'clinical_note', name: 'Clinical Note' },
-  { id: 'op_report', name: 'Operation Report' },
-  { id: 'jon_note', name: 'Open Note' },
+  { id: 'ortho_consult', name: 'Ortho Consult' },
 ];
 
 interface Props {
@@ -42,9 +40,9 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [alerts, setAlerts] = useState<LabAlert[]>([]);
   const [notes, setNotes] = useState<HaloNote[]>([]);
   const [activeNoteIndex, setActiveNoteIndex] = useState(0);
-  const [templateId, setTemplateId] = useState(propTemplateId || 'clinical_note');
+  const [templateId, setTemplateId] = useState(propTemplateId || 'ortho_consult');
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
-  const [selectedTemplatesForGenerate, setSelectedTemplatesForGenerate] = useState<string[]>(['clinical_note']);
+  const [selectedTemplatesForGenerate, setSelectedTemplatesForGenerate] = useState<string[]>(['ortho_consult']);
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat'>('overview');
   const [savingNoteIndex, setSavingNoteIndex] = useState<number | null>(null);
@@ -402,7 +400,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       return;
     }
     setPendingTranscript(transcript);
-    setSelectedTemplatesForGenerate(['clinical_note']);
+    setSelectedTemplatesForGenerate(['ortho_consult']);
     setActiveTab('notes');
   }, [onToast]);
 
