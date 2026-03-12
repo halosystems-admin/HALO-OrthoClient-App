@@ -79,3 +79,19 @@ ${customTemplate}`;
   }
   return 'You are a medical scribe. Transcribe this audio into a SOAP note with ## headers for Subjective, Objective, Assessment, Plan.';
 }
+
+export function fileDescriptionPrompt(fileName: string, extractedText: string): string {
+  const truncated = extractedText.substring(0, MAX_CONTENT_LENGTH);
+  return `
+You are HALO, a clinical assistant helping a doctor understand a newly uploaded document.
+
+File name: ${fileName}
+
+Extracted text (may be partial):
+${truncated}
+
+In 2–4 short bullet points, describe clearly what this file contains and why it might be clinically relevant (history, investigations, imaging, lab results, correspondence, etc.).
+Avoid speculation and do not invent diagnoses that are not supported by the text.
+Return ONLY a raw Markdown string (no JSON).
+`;
+}

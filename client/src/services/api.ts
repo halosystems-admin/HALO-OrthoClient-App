@@ -1,6 +1,43 @@
-import type { Patient, DriveFile, LabAlert, ChatMessage, UserSettings, HaloNote } from '../../../shared/types';
+import type {
+  Patient,
+  DriveFile,
+  LabAlert,
+  ChatMessage,
+  UserSettings,
+  HaloNote,
+  CalendarEvent,
+  ScribeSession,
+} from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+
+/** WebSocket URL for live transcription (ws or wss).
+ *
+ * - In production: set VITE_API_URL to the backend origin (e.g. https://app.halo.africa)
+ *   and we derive wss://.../ws/transcribe from that.
+ * - In local dev (no VITE_API_URL): REST calls use Vite's /api proxy, but WebSocket
+ *   needs to go directly to the Node server on port 3001.
+ */
+export function getTranscribeWebSocketUrl(): string {
+  // If an explicit API base is configured, derive WS URL from it
+  if (API_BASE) {
+    const base = API_BASE.replace(/\/$/, '');
+    const wsProtocol = base.startsWith('https') ? 'wss:' : 'ws:';
+    const host = base.replace(/^https?:\/\//, '');
+    return `${wsProtocol}//${host}/ws/transcribe`;
+  }
+
+  // Dev fallback: assume backend is on port 3001 at same host
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostname = window.location.hostname;
+    const port = 3001;
+    return `${protocol}//${hostname}:${port}/ws/transcribe`;
+  }
+
+  // SSR / safety fallback
+  return 'ws://localhost:3001/ws/transcribe';
+}
 
 // --- Structured Error ---
 export class ApiError extends Error {
@@ -30,7 +67,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
   } catch (error) {
     console.error('[API] Network error:', error);
     throw new ApiError(
-      `Failed to connect to server. Make sure the server is running on port 3000. ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to connect to server. Make sure the server is running on port 3001. ${error instanceof Error ? error.message : 'Unknown error'}`,
       0
     );
   }
@@ -86,6 +123,77 @@ export const requestNewTemplate = (params: {
     body: JSON.stringify(params),
   });
 
+// --- CALENDAR / BOOKINGS ---
+
+export const fetchTodayEvents = () =>
+  request<{ events: CalendarEvent[] }>('/api/calendar/today');
+
+export const fetchEventsInRange = (
+  startIso: string,
+  endIso: string,
+  timeZone?: string
+) => {
+  const params = new URLSearchParams({
+    start: startIso,
+    end: endIso,
+  });
+  if (timeZone) params.set('timeZone', timeZone);
+  return request<{ events: CalendarEvent[] }>(
+    `/api/calendar/events?${params.toString()}`
+  );
+};
+
+export const fetchCalendarEvent = (id: string) =>
+  request<{ event: CalendarEvent }>(`/api/calendar/events/${encodeURIComponent(id)}`);
+
+export interface CalendarEventCreatePayload {
+  title: string;
+  description?: string;
+  start: string;
+  end: string;
+  timeZone?: string;
+  location?: string;
+  patientId?: string;
+  attachmentFileIds?: string[];
+}
+
+export type CalendarEventUpdatePayload = Partial<CalendarEventCreatePayload>;
+
+export const createCalendarEvent = (payload: CalendarEventCreatePayload) =>
+  request<{ event: CalendarEvent }>('/api/calendar/events', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const updateCalendarEvent = (
+  id: string,
+  payload: CalendarEventUpdatePayload
+) =>
+  request<{ event: CalendarEvent }>(`/api/calendar/events/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+
+export const deleteCalendarEvent = (id: string) =>
+  request<void>(`/api/calendar/events/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+export const updateCalendarEventAttachments = (id: string, fileIds: string[]) =>
+  request<{ event: CalendarEvent }>(
+    `/api/calendar/events/${encodeURIComponent(id)}/attachments`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ fileIds }),
+    }
+  );
+
+export const generatePrepNote = (patientId: string, patientName: string) =>
+  request<{ prepNote: string }>('/api/calendar/prep-note', {
+    method: 'POST',
+    body: JSON.stringify({ patientId, patientName }),
+  });
+
 // --- PATIENTS (paginated) ---
 interface PatientsResponse {
   patients: Patient[];
@@ -127,6 +235,33 @@ export const updatePatient = (id: string, updates: { name?: string; dob?: string
 export const deletePatient = (id: string) =>
   request(`/api/drive/patients/${id}`, { method: 'DELETE' });
 
+// --- SCRIBE SESSIONS (per patient) ---
+
+export const fetchPatientSessions = (patientId: string) =>
+  request<{ sessions: ScribeSession[] }>(
+    `/api/drive/patients/${encodeURIComponent(patientId)}/sessions`
+  );
+
+export const savePatientSession = (
+  patientId: string,
+  payload: {
+    sessionId?: string;
+    transcript: string;
+    context?: string;
+    templates?: string[];
+    noteTitles?: string[];
+    notes?: Array<{ noteId: string; title: string; content: string; template_id: string }>;
+    mainComplaint?: string;
+  }
+) =>
+  request<{ sessions: ScribeSession[] }>(
+    `/api/drive/patients/${encodeURIComponent(patientId)}/sessions`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
 // --- FILES / FOLDER CONTENTS (paginated) ---
 interface FilesResponse {
   files: DriveFile[];
@@ -140,6 +275,18 @@ export const fetchFilesFirstPage = async (
 ): Promise<{ files: DriveFile[]; nextPage: string | null }> => {
   const data = await request<FilesResponse>(
     `/api/drive/patients/${patientId}/files?pageSize=${pageSize}`
+  );
+  return { files: data.files || [], nextPage: data.nextPage ?? null };
+};
+
+/** Warm-and-list: upload tiny temp file, get file list, server deletes temp. Makes list load reliably when plain list hangs. */
+export const warmAndListFiles = async (
+  patientId: string,
+  pageSize = 24
+): Promise<{ files: DriveFile[]; nextPage: string | null }> => {
+  const data = await request<FilesResponse>(
+    `/api/drive/patients/${patientId}/warm-and-list?pageSize=${pageSize}`,
+    { method: 'POST' }
   );
   return { files: data.files || [], nextPage: data.nextPage ?? null };
 };
@@ -187,9 +334,9 @@ export const fetchFolderContents = async (folderId: string): Promise<DriveFile[]
   return all;
 };
 
-export const uploadFile = async (patientId: string, file: File, customName?: string) => {
+export const uploadFile = async (patientId: string, file: File, customName?: string): Promise<DriveFile> => {
   const base64 = await fileToBase64(file);
-  return request(`/api/drive/patients/${patientId}/upload`, {
+  return request<DriveFile>(`/api/drive/patients/${patientId}/upload`, {
     method: 'POST',
     body: JSON.stringify({
       fileName: customName || file.name,
@@ -249,6 +396,20 @@ export const transcribeAudio = async (audioBase64: string, mimeType: string): Pr
     body: JSON.stringify({ audioBase64, mimeType }),
   });
   return data.transcript ?? '';
+};
+
+/** Ask Gemini to describe a single uploaded file for clinical context. */
+export const describeFile = async (patientId: string, file: DriveFile): Promise<string> => {
+  const data = await request<{ description: string }>('/api/ai/describe-file', {
+    method: 'POST',
+    body: JSON.stringify({
+      patientId,
+      fileId: file.id,
+      name: file.name,
+      mimeType: file.mimeType,
+    }),
+  });
+  return data.description ?? '';
 };
 
 // --- Halo API (note generation + templates) ---

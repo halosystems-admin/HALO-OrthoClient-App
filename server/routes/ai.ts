@@ -10,6 +10,7 @@ import {
   searchPrompt,
   chatSystemPrompt,
   geminiTranscriptionPrompt,
+  fileDescriptionPrompt,
 } from '../utils/prompts';
 
 const router = Router();
@@ -111,6 +112,49 @@ router.post('/analyze-image', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Image analysis error:', err);
     res.json({ filename: `image_${Date.now()}.jpg` });
+  }
+});
+
+// POST /describe-file — summarize a single uploaded file for context
+router.post('/describe-file', async (req: Request, res: Response) => {
+  try {
+    const { patientId, fileId, name, mimeType } = req.body as {
+      patientId?: string;
+      fileId?: string;
+      name?: string;
+      mimeType?: string;
+    };
+
+    if (!patientId || !fileId) {
+      res.status(400).json({ error: 'patientId and fileId are required.' });
+      return;
+    }
+
+    const token = req.session.accessToken;
+    if (!token) {
+      res.status(401).json({ error: 'Not authenticated.' });
+      return;
+    }
+
+    // Reuse Drive text extraction helpers to read the file contents
+    const dummyFile = {
+      id: fileId,
+      name: name || 'Uploaded file',
+      mimeType: mimeType || 'application/octet-stream',
+    };
+
+    const extracted = await extractTextFromFile(token, dummyFile, 3000);
+    if (!extracted.trim()) {
+      res.json({ description: '' });
+      return;
+    }
+
+    const descriptionRaw = await generateText(fileDescriptionPrompt(dummyFile.name, extracted));
+    const description = (descriptionRaw || '').trim();
+    res.json({ description });
+  } catch (err) {
+    console.error('Describe file error:', err);
+    res.json({ description: '' });
   }
 });
 
@@ -303,27 +347,43 @@ router.post('/transcribe', async (req: Request, res: Response) => {
     const audioBuffer = Buffer.from(cleanBase64, 'base64');
     const audioMime = mimeType || 'audio/webm';
 
+    console.log('[ai/transcribe] request', {
+      mimeType: audioMime,
+      base64Length: cleanBase64.length,
+      audioBytes: audioBuffer.length,
+      deepgramAvailable: isDeepgramAvailable(),
+    });
+
     if (!isDeepgramAvailable()) {
-      console.log('Deepgram key not set, falling back to Gemini for transcription');
+      console.warn('[ai/transcribe] Deepgram key not set or unavailable, using Gemini fallback');
       const transcript = await transcribeAudio(
         geminiTranscriptionPrompt(undefined),
         cleanBase64,
         audioMime
       );
+      console.log('[ai/transcribe] Gemini transcript length', transcript?.length || 0);
       res.json({ transcript: transcript || '', rawTranscript: transcript || '' });
       return;
     }
 
-    const transcript = await transcribeWithDeepgram(audioBuffer, audioMime);
+    let transcript: string;
+    try {
+      transcript = await transcribeWithDeepgram(audioBuffer, audioMime);
+    } catch (err) {
+      console.error('[ai/transcribe] Deepgram HTTP transcription failed:', err);
+      res.status(502).json({ error: 'Live transcription provider failed. Please try again.' });
+      return;
+    }
 
     if (!transcript) {
       res.status(400).json({ error: 'No speech detected in audio.' });
       return;
     }
 
+    console.log('[ai/transcribe] Deepgram transcript length', transcript.length);
     res.json({ transcript, rawTranscript: transcript });
   } catch (err) {
-    console.error('Transcribe error:', err);
+    console.error('[ai/transcribe] Transcribe error:', err);
     res.status(500).json({ error: 'Could not transcribe audio.' });
   }
 });
