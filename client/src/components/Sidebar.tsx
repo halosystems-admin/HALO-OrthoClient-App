@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Patient, UserSettings, CalendarEvent } from '../../../shared/types';
-import { Plus, LogOut, Search, Trash2, ChevronRight, Users, Clock, Settings, Loader2, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, LogOut, Search, Trash2, ChevronRight, Users, Clock, Settings, Loader2, Calendar as CalendarIcon, Monitor } from 'lucide-react';
 import { searchPatientsByConcept } from '../services/api';
 import { SidebarCalendar } from './SidebarCalendar';
 
@@ -13,6 +13,8 @@ interface SidebarProps {
   onDeletePatient: (patient: Patient) => void;
   onLogout: () => void;
   onOpenSettings: () => void;
+  onRestScreen?: () => void;
+  hasHomeScreenImage?: boolean;
   userEmail?: string;
   userSettings?: UserSettings | null;
   calendarEvents?: CalendarEvent[];
@@ -30,6 +32,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeletePatient,
   onLogout,
   onOpenSettings,
+  onRestScreen,
+  hasHomeScreenImage,
   userEmail,
   userSettings,
   calendarEvents = [],
@@ -249,6 +253,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button onClick={onCreatePatient} className="w-full bg-sky-600 hover:bg-sky-500 text-white p-3.5 rounded-xl font-bold transition-all shadow-lg shadow-sky-900/20 flex items-center justify-center gap-2 mb-3 active:scale-[0.98]">
           <Plus size={20} /> New Patient Folder
         </button>
+        {hasHomeScreenImage && onRestScreen && (
+          <button
+            type="button"
+            onClick={onRestScreen}
+            className="w-full flex items-center justify-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-300 py-2.5 mb-1 transition-colors"
+            title="Show your home image full screen"
+          >
+            <Monitor size={14} /> Rest screen
+          </button>
+        )}
         <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-300 py-2 transition-colors">
           <LogOut size={14} /> SIGN OUT
         </button>

@@ -63,6 +63,8 @@ export interface UserSettings {
   customTemplateName: string;
   // Halo template (for generate_note)
   templateId?: string;
+  /** Custom image for the app home screen (when no patient selected). Data URL or URL. */
+  homeScreenImageUrl?: string;
 }
 
 export interface NoteField {
@@ -79,6 +81,8 @@ export interface HaloNote {
   dirty?: boolean;
   /** Structured fields from generate_note (for preview before DOCX) */
   fields?: NoteField[];
+  /** Raw JSON payload returned by HALO generate_note (for debugging/display). */
+  raw?: unknown;
 }
 
 export interface HaloTemplate {

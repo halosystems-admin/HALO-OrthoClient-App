@@ -673,15 +673,18 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                   .join('\n\n')
               : '';
           const content =
-            first?.content?.trim() || fromFields || trimmedTranscript;
+            first?.content?.trim() ||
+            fromFields ||
+            (first?.raw ? JSON.stringify(first.raw, null, 2) : '');
           return {
             noteId: first?.noteId ?? `note-${tid}-${Date.now()}`,
-            title: first?.title ?? name,
+            title: (first?.title && String(first.title).trim()) ? String(first.title) : name,
             content,
             template_id: tid,
             lastSavedAt: new Date().toISOString(),
             dirty: false,
             ...(first?.fields && first.fields.length > 0 ? { fields: first.fields } : {}),
+            ...(first?.raw ? { raw: first.raw } : {}),
           };
         });
         if (isAddNote) {
@@ -1193,8 +1196,8 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50">
-        <div className="max-w-6xl mx-auto">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50 flex flex-col min-h-0">
+        <div className="w-full max-w-[1600px] mx-auto flex-1 flex flex-col min-h-0">
           {/* AI Panel */}
           {hasAiContent && showAiPanel && (
             <div className="mb-6 space-y-4">
@@ -1328,7 +1331,8 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             </div>
           ) : activeTab === 'notes' ? (
             <>
-              <div className="mb-3 flex items-center justify-between">
+            <div className="flex flex-col flex-1 min-h-[480px]">
+              <div className="mb-3 flex-shrink-0 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => handleLoadSession(null)}
@@ -1341,8 +1345,8 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                 </span>
               </div>
 
-              {/* Current session: transcript when modal is open, or main content when not */}
-              <div className="h-[600px] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
+              {/* Current session: transcript when modal is open, or main content when not — fills remaining space */}
+              <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
                 {pendingTranscript ? (
                   /* Transcript visible in background while template modal is open */
                   <div className="flex-1 flex flex-col p-4 overflow-auto bg-slate-50">
@@ -1506,6 +1510,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                   </>
                 )}
               </div>
+            </div>
 
               {/* Template choice modal — when new transcript or "+" add note; hide while generating */}
               {(pendingTranscript != null || showAddNoteModal) && !isGeneratingNotes && (

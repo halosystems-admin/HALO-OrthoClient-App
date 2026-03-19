@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { UserSettings } from '../../../shared/types';
 import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
-  FileText, Upload, Check, AlertCircle, Send, Plus,
+  FileText, Upload, Check, AlertCircle, Send, Plus, Image as ImageIcon, Trash2,
 } from 'lucide-react';
 import { requestNewTemplate } from '../services/api';
 
@@ -24,7 +24,45 @@ const DEFAULT_SETTINGS: UserSettings = {
   customTemplateContent: '',
   customTemplateName: '',
   templateId: 'clinical_note',
+  homeScreenImageUrl: '',
 };
+
+const HOME_SCREEN_MAX_WIDTH = 1200;
+const HOME_SCREEN_JPEG_QUALITY = 0.78;
+
+function resizeImageToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+      if (width > HOME_SCREEN_MAX_WIDTH) {
+        height = (height * HOME_SCREEN_MAX_WIDTH) / width;
+        width = HOME_SCREEN_MAX_WIDTH;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas not supported'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      try {
+        resolve(canvas.toDataURL('image/jpeg', HOME_SCREEN_JPEG_QUALITY));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load image'));
+    };
+    img.src = url;
+  });
+}
 
 interface Props {
   isOpen: boolean;
@@ -53,6 +91,9 @@ export const SettingsModal: React.FC<Props> = ({
   const [requestFiles, setRequestFiles] = useState<File[]>([]);
   const [requestSending, setRequestSending] = useState(false);
   const requestFileInputRef = useRef<HTMLInputElement>(null);
+  const homeScreenInputRef = useRef<HTMLInputElement>(null);
+  const [homeScreenLoading, setHomeScreenLoading] = useState(false);
+  const [homeScreenError, setHomeScreenError] = useState('');
 
   useEffect(() => {
     if (settings) {
@@ -340,6 +381,77 @@ export const SettingsModal: React.FC<Props> = ({
             )}
           </div>
 
+          {/* Home screen image — shown when no patient is selected */}
+          <div className="border-t border-slate-100 pt-6">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+              <ImageIcon size={12} /> Home screen image
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Shown when you open the app with no patient selected—e.g. a favourite view (sea, holiday house) so you see something calming before you start.
+            </p>
+            <input
+              ref={homeScreenInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setHomeScreenError('');
+                setHomeScreenLoading(true);
+                try {
+                  const dataUrl = await resizeImageToDataUrl(file);
+                  setForm((prev) => ({ ...prev, homeScreenImageUrl: dataUrl }));
+                } catch (err) {
+                  setHomeScreenError(err instanceof Error ? err.message : 'Failed to process image.');
+                }
+                setHomeScreenLoading(false);
+                e.target.value = '';
+              }}
+            />
+            {form.homeScreenImageUrl ? (
+              <div className="space-y-2">
+                <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-video max-h-40">
+                  <img
+                    src={form.homeScreenImageUrl}
+                    alt="Home screen preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => homeScreenInputRef.current?.click()}
+                    disabled={homeScreenLoading}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
+                  >
+                    {homeScreenLoading ? 'Processing…' : <><ImageIcon size={14} /> Change image</>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, homeScreenImageUrl: '' }))}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition"
+                  >
+                    <Trash2 size={14} /> Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => homeScreenInputRef.current?.click()}
+                disabled={homeScreenLoading}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-slate-600 hover:bg-slate-100 hover:border-sky-200 transition text-sm font-medium w-full"
+              >
+                <ImageIcon size={18} />
+                {homeScreenLoading ? 'Processing…' : 'Choose a photo'}
+              </button>
+            )}
+            {homeScreenError && (
+              <p className="mt-1.5 text-xs text-rose-600">{homeScreenError}</p>
+            )}
+          </div>
+
           {/* Note templates: current templates + default + request new */}
           <div className="border-t border-slate-100 pt-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
@@ -439,13 +551,14 @@ export const SettingsModal: React.FC<Props> = ({
         </div>
 
         {/* Footer with Save */}
-        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') || form.templateId !== (settings?.templateId || 'clinical_note') ? (
+        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') || form.templateId !== (settings?.templateId || 'clinical_note') || form.homeScreenImageUrl !== (settings?.homeScreenImageUrl || '') ? (
           <div className="border-t border-slate-100 p-4 bg-slate-50 flex gap-3">
             <button
               onClick={() => {
                 setEditMode(false);
                 setForm(settings || DEFAULT_SETTINGS);
                 setTemplateTab(settings?.noteTemplate || 'soap');
+                setHomeScreenError('');
               }}
               className="flex-1 px-4 py-2.5 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition text-sm"
             >

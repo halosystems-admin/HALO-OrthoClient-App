@@ -5,7 +5,7 @@ import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
 import { checkAuth, getLoginUrl, logout, fetchAllPatients, warmAndListFiles, createPatient, deletePatient, loadSettings, saveSettings, ApiError, fetchTodayEvents } from './services/api';
 import type { Patient, UserSettings, CalendarEvent } from '../../shared/types';
-import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2 } from 'lucide-react';
+import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, Monitor } from 'lucide-react';
 import { CalendarPage } from './pages/CalendarPage';
 
 const ENABLE_EXPANDED_CALENDAR =
@@ -50,6 +50,7 @@ export const App = () => {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarPrepEvent, setCalendarPrepEvent] = useState<CalendarEvent | null>(null);
   const [activeMainView, setActiveMainView] = useState<'workspace' | 'calendar'>('workspace');
+  const [screenRest, setScreenRest] = useState(false);
 
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
@@ -91,7 +92,7 @@ export const App = () => {
         // First verify server is reachable
         const healthCheck = await fetch('/api/health', { credentials: 'include' }).catch(() => null);
         if (!healthCheck || !healthCheck.ok) {
-          console.warn('Server health check failed - make sure server is running on port 3001');
+          console.warn('Server health check failed - make sure server is running on port 3000');
         }
         
         const auth = await checkAuth();
@@ -111,9 +112,18 @@ export const App = () => {
           if (prefetchId) {
             warmAndListFiles(prefetchId, 24).catch(() => {});
           }
-          // Load settings in background
+          // Load settings in background and cache home screen image for next load
           loadSettings().then(res => {
-            if (res.settings) setUserSettings(res.settings);
+            if (res.settings) {
+              setUserSettings(res.settings);
+              try {
+                if (res.settings.homeScreenImageUrl) {
+                  localStorage.setItem('halo_homeScreenImageUrl', res.settings.homeScreenImageUrl);
+                }
+              } catch {
+                /* ignore */
+              }
+            }
           }).catch(() => {});
 
           // Load today\u2019s calendar events in background
@@ -208,6 +218,11 @@ export const App = () => {
   const handleSaveSettings = async (settings: UserSettings) => {
     await saveSettings(settings);
     setUserSettings(settings);
+    try {
+      localStorage.setItem('halo_homeScreenImageUrl', settings.homeScreenImageUrl ?? '');
+    } catch {
+      /* ignore */
+    }
     showToast('Settings saved.', 'success');
   };
 
@@ -239,9 +254,20 @@ export const App = () => {
   };
 
   if (!isReady) {
+    const loadingBgImage = (typeof localStorage !== 'undefined' && localStorage.getItem('halo_homeScreenImageUrl')) || undefined;
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50 relative overflow-hidden">
+        {loadingBgImage && (
+          <>
+            <div
+              className="absolute inset-0 min-h-full min-w-full bg-cover bg-center bg-no-repeat"
+              style={{ backgroundImage: `url(${loadingBgImage})` }}
+              aria-hidden="true"
+            />
+            <div className="absolute inset-0 bg-slate-900/30 pointer-events-none" aria-hidden="true" />
+          </>
+        )}
+        <div className="relative z-10 flex flex-col items-center gap-4">
           <Loader className="animate-spin text-sky-600" size={32} />
           <p className="text-sm text-slate-400 font-medium">Loading HALO...</p>
         </div>
@@ -287,8 +313,10 @@ export const App = () => {
           onDeletePatient={handleDeleteRequest}
           onLogout={handleLogout}
           onOpenSettings={() => setShowSettings(true)}
+          onRestScreen={() => setScreenRest(true)}
           userEmail={userEmail}
           userSettings={userSettings}
+          hasHomeScreenImage={!!(userSettings?.homeScreenImageUrl || (typeof localStorage !== 'undefined' && localStorage.getItem('halo_homeScreenImageUrl')))}
           calendarEvents={calendarEvents}
           calendarLoading={calendarLoading}
           onSelectCalendarEvent={handleSelectCalendarEvent}
@@ -298,7 +326,7 @@ export const App = () => {
         />
       </div>
 
-      <div className={`flex-1 flex flex-col h-screen relative ${!selectedPatientId ? 'hidden md:flex' : 'flex'}`}>
+      <div className="flex-1 flex flex-col h-screen relative min-w-0">
         {ENABLE_EXPANDED_CALENDAR && activeMainView === 'calendar' ? (
           <CalendarPage
             patients={patients}
@@ -323,15 +351,31 @@ export const App = () => {
             }
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-300 relative overflow-hidden">
-            {/* Background logo — large watermark */}
-            <img
-              src="/halo-logo.png"
-              alt=""
-              aria-hidden="true"
-              className="absolute opacity-[0.04] pointer-events-none select-none w-[70vw] max-w-[700px] min-w-[300px] md:w-[55vw] lg:w-[45vw]"
-              draggable={false}
-            />
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-300 relative overflow-hidden min-h-0 w-full">
+            {/* Custom home screen image (from settings or localStorage cache) or default background */}
+            {(() => {
+              const homeImageUrl = userSettings?.homeScreenImageUrl
+                || (typeof localStorage !== 'undefined' ? localStorage.getItem('halo_homeScreenImageUrl') : null);
+              return homeImageUrl ? (
+                <div
+                  className="absolute inset-0 min-h-full min-w-full bg-cover bg-center bg-no-repeat"
+                  style={{ backgroundImage: `url(${homeImageUrl})` }}
+                  aria-hidden="true"
+                />
+              ) : (
+                <img
+                  src="/halo-logo.png"
+                  alt=""
+                  aria-hidden="true"
+                  className="absolute opacity-[0.04] pointer-events-none select-none w-[70vw] max-w-[700px] min-w-[300px] md:w-[55vw] lg:w-[45vw]"
+                  draggable={false}
+                />
+              );
+            })()}
+            {/* Overlay so text stays readable on custom image */}
+            {(userSettings?.homeScreenImageUrl || (typeof localStorage !== 'undefined' && localStorage.getItem('halo_homeScreenImageUrl'))) && (
+              <div className="absolute inset-0 bg-slate-900/40 pointer-events-none" aria-hidden="true" />
+            )}
             {/* Foreground content */}
             <div className="relative z-10 flex flex-col items-center text-center px-6">
               <img
@@ -341,10 +385,45 @@ export const App = () => {
                 draggable={false}
               />
               <p className="text-lg font-medium text-slate-400">Select a patient to begin</p>
+              {(userSettings?.homeScreenImageUrl || (typeof localStorage !== 'undefined' && localStorage.getItem('halo_homeScreenImageUrl'))) && (
+                <button
+                  type="button"
+                  onClick={() => setScreenRest(true)}
+                  className="mt-6 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-600 bg-slate-800/60 text-slate-300 hover:bg-slate-700/80 hover:text-white transition-colors text-sm font-medium"
+                  title="Show your image full screen (tap anywhere to exit)"
+                >
+                  <Monitor size={18} /> Rest screen
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Screen rest overlay — full-screen image, tap to exit */}
+      {screenRest && (
+        <button
+          type="button"
+          className="fixed inset-0 z-[100] w-full h-full cursor-default focus:outline-none focus:ring-0"
+          onClick={() => setScreenRest(false)}
+          aria-label="Exit rest screen"
+        >
+          {(() => {
+            const url = userSettings?.homeScreenImageUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('halo_homeScreenImageUrl') : null);
+            return url ? (
+              <div
+                className="absolute inset-0 min-h-full min-w-full bg-cover bg-center bg-no-repeat"
+                style={{ backgroundImage: `url(${url})` }}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-slate-900" />
+            );
+          })()}
+          <span className="absolute bottom-6 left-0 right-0 text-center text-white/50 text-xs font-medium tracking-wide">
+            Tap anywhere to exit
+          </span>
+        </button>
+      )}
 
       {/* TOAST NOTIFICATIONS */}
       {toast && (

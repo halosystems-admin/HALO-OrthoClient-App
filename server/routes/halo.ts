@@ -14,12 +14,52 @@ function isSmtpConfigured(): boolean {
   return Boolean(config.smtpHost && config.smtpUser && config.smtpPass);
 }
 
+function isOverrideAccount(req: Request): boolean {
+  const email = (req.session as { userEmail?: string }).userEmail?.trim().toLowerCase();
+  return Boolean(
+    config.haloOverrideEmail &&
+    config.haloOverrideUserId &&
+    email === config.haloOverrideEmail
+  );
+}
+
+function filterTemplatesByIds(data: unknown, ids: string[]): unknown {
+  if (!data || ids.length === 0) return data;
+  const idSet = new Set(ids);
+  if (Array.isArray(data)) {
+    return data.filter((t: { id?: string; template_id?: string; templateId?: string }) =>
+      idSet.has(String(t.id ?? t.template_id ?? t.templateId ?? '').toLowerCase())
+    );
+  }
+  const obj = data as Record<string, unknown>;
+  if (obj.templates && Array.isArray(obj.templates)) {
+    const arr = (obj.templates as Array<{ id?: string; template_id?: string; templateId?: string }>).filter((t) =>
+      idSet.has(String(t.id ?? t.template_id ?? t.templateId ?? '').toLowerCase())
+    );
+    return { ...obj, templates: arr };
+  }
+  const out: Record<string, unknown> = {};
+  for (const id of ids) {
+    const key = Object.keys(obj).find((k) => k.toLowerCase() === id);
+    if (key && obj[key] != null) out[key] = obj[key];
+  }
+  return Object.keys(out).length > 0 ? out : data;
+}
+
 // POST /api/halo/templates
 router.post('/templates', async (req: Request, res: Response) => {
   try {
-    const userId = (req.body?.user_id as string) || config.haloUserId;
-    const templates = await getTemplates(userId);
-    res.json(templates);
+    let userId =
+      (req.body?.user_id as string) ||
+      (config.haloTestUserId && !config.isProduction ? config.haloTestUserId : config.haloUserId);
+    if (isOverrideAccount(req) && config.haloOverrideUserId) {
+      userId = config.haloOverrideUserId;
+    }
+    let data: Record<string, unknown> = await getTemplates(userId);
+    if (isOverrideAccount(req) && config.haloOverrideTemplateIds.length > 0) {
+      data = filterTemplatesByIds(data, config.haloOverrideTemplateIds) as Record<string, unknown>;
+    }
+    res.json(data);
   } catch (err) {
     console.error('Halo get_templates error:', err);
     const message = err instanceof Error ? err.message : 'Failed to fetch templates.';
@@ -48,8 +88,17 @@ router.post('/generate-note', async (req: Request, res: Response) => {
       return;
     }
 
-    const userId = useMobileConfig ? config.haloMobileUserId : (user_id || config.haloUserId);
-    const templateId = useMobileConfig ? config.haloMobileTemplateId : (template_id || 'clinical_note');
+    let userId = useMobileConfig
+      ? config.haloMobileUserId
+      : (user_id || (config.haloTestUserId && !config.isProduction ? config.haloTestUserId : config.haloUserId));
+    if (!useMobileConfig && isOverrideAccount(req) && config.haloOverrideUserId) {
+      userId = config.haloOverrideUserId;
+    }
+    const defaultTemplateId =
+      !useMobileConfig && isOverrideAccount(req) && config.haloOverrideTemplateIds.length > 0
+        ? config.haloOverrideTemplateIds[0]
+        : 'clinical_note';
+    const templateId = useMobileConfig ? config.haloMobileTemplateId : (template_id || defaultTemplateId);
     console.log('[Halo] generate-note request:', { userId: userId.slice(0, 8) + '…', templateId, return_type, textLength: text.length });
     const result = await generateNote({ user_id: userId, template_id: templateId, text, return_type });
 

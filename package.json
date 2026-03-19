@@ -6,7 +6,7 @@
   "scripts": {
     "dev:server": "nodemon --exec ts-node server/index.ts",
     "dev:client": "cd client && npm run dev",
-    "dev": "echo \"Client dev server: http://localhost:5173\" && concurrently \"npm run dev:server\" \"wait-on http://localhost:3001/api/health && npm run dev:client\"",
+    "dev": "echo \"Client dev server: http://localhost:5173\" && concurrently \"npm run dev:server\" \"wait-on http://localhost:3000/api/health && npm run dev:client\"",
     "build": "cd client && npm run build && cd .. && tsc",
     "build:server": "tsc",
     "build:client": "cd client && npm run build",

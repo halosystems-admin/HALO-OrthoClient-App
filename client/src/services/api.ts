@@ -16,7 +16,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
  * - In production: set VITE_API_URL to the backend origin (e.g. https://app.halo.africa)
  *   and we derive wss://.../ws/transcribe from that.
  * - In local dev (no VITE_API_URL): REST calls use Vite's /api proxy, but WebSocket
- *   needs to go directly to the Node server on port 3001.
+ *   needs to go directly to the Node server (same port as backend, e.g. 3000).
  */
 export function getTranscribeWebSocketUrl(): string {
   // If an explicit API base is configured, derive WS URL from it
@@ -27,16 +27,16 @@ export function getTranscribeWebSocketUrl(): string {
     return `${wsProtocol}//${host}/ws/transcribe`;
   }
 
-  // Dev fallback: assume backend is on port 3001 at same host
+  // Dev fallback: assume backend is on port 3000 at same host
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const hostname = window.location.hostname;
-    const port = 3001;
+    const port = 3000;
     return `${protocol}//${hostname}:${port}/ws/transcribe`;
   }
 
   // SSR / safety fallback
-  return 'ws://localhost:3001/ws/transcribe';
+  return 'ws://localhost:3000/ws/transcribe';
 }
 
 // --- Structured Error ---
@@ -67,7 +67,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
   } catch (error) {
     console.error('[API] Network error:', error);
     throw new ApiError(
-      `Failed to connect to server. Make sure the server is running on port 3001. ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to connect to server. Make sure the server is running on port 3000. ${error instanceof Error ? error.message : 'Unknown error'}`,
       0
     );
   }

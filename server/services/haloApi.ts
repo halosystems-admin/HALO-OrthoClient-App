@@ -43,6 +43,8 @@ export interface HaloNote {
   dirty?: boolean;
   /** Structured fields from generate_note (for preview before DOCX) */
   fields?: NoteField[];
+  /** Raw JSON payload returned by HALO generate_note (for debugging/display). */
+  raw?: unknown;
 }
 
 const META_KEYS = new Set(['noteId', 'id', 'title', 'name', 'template_id', 'templateId', 'lastSavedAt', 'sections', 'fields', 'notes', 'data']);
@@ -63,15 +65,21 @@ function extractFieldsFromNoteData(data: unknown): NoteField[] | null {
     if (fields.length > 0) return fields;
   }
 
-  // Shape: { "fields": [ { "label": "X", "value": "Y" } ] } or body
+  // Shape: { "fields": [ { "label": "X", "value": "Y" } ] } or { "key": "X", "value": "Y" }
   if (Array.isArray(obj.fields)) {
     const fields: NoteField[] = [];
     for (const f of obj.fields as Array<Record<string, unknown>>) {
-      const label = (f.label ?? f.name ?? f.title) as string;
+      const label = (f.label ?? f.name ?? f.title ?? f.key) as string;
       const body = (f.value ?? f.body ?? f.content ?? f.text ?? '') as string;
       if (label && typeof label === 'string') fields.push({ label, body: String(body ?? '') });
     }
     if (fields.length > 0) return fields;
+  }
+
+  // Single object with key/value (e.g. { key: "facility", value: "..." })
+  if (typeof obj.key === 'string' && obj.key.length > 0) {
+    const body = String(obj.value ?? obj.body ?? obj.content ?? '');
+    return [{ label: obj.key, body }];
   }
 
   // Shape: { "Subjective": "...", "Objective": "...", "Plan": "..." } — object with string values
@@ -110,6 +118,24 @@ function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
   }
 
   if (Array.isArray(data)) {
+    // Array of field-like objects { key, value } or { label, body } → one note with all fields
+    const first = data[0];
+    if (
+      data.length > 0 &&
+      first != null &&
+      typeof first === 'object' &&
+      !Array.isArray(first) &&
+      ('key' in first || 'label' in first || 'name' in first)
+    ) {
+      const fields: NoteField[] = (data as Array<Record<string, unknown>>).map((f) => {
+        const label = String(f.label ?? f.name ?? f.title ?? f.key ?? '');
+        const body = String(f.value ?? f.body ?? f.content ?? f.text ?? '');
+        return { label, body };
+      }).filter((f) => f.label.length > 0);
+      if (fields.length > 0) {
+        return [oneNote(fieldsToContent(fields), 'Note 1', fields)];
+      }
+    }
     return data.map((item: any, i: number) => {
       const fields = extractFieldsFromNoteData(item);
       const content = typeof item.content === 'string' ? item.content : (item.text ?? item.note ?? item.body ?? '');
@@ -249,5 +275,39 @@ export async function generateNote(params: GenerateNoteParams): Promise<HaloNote
   }
 
   const data = (await res.json()) as unknown;
-  return normalizeNotesResponse(data, params.template_id);
+  // Log HALO response for debugging (truncate if large)
+  const logged =
+    typeof data === 'string'
+      ? data.slice(0, 800)
+      : JSON.stringify(data).slice(0, 1200);
+  console.log('[Halo] generate_note response:', logged + (JSON.stringify(data).length > 1200 ? '…' : ''));
+
+  const notes = normalizeNotesResponse(data, params.template_id);
+  const withRaw = notes.map((note) => ({ ...note, raw: data }));
+
+  // If normalizer didn't recognize the shape, still return one note with raw so the client can display it.
+  // Use empty title so the client uses the template display name (e.g. "Op Report") for the tab.
+  if (withRaw.length === 0 && data != null) {
+    const readable =
+      typeof data === 'object' && data !== null && !Array.isArray(data)
+        ? Object.entries(data as Record<string, unknown>)
+            .filter(([k]) => !['noteId', 'id', 'title', 'template_id', 'sections', 'fields', 'notes', 'data'].includes(k))
+            .map(([k, v]) => `${k}:\n${typeof v === 'string' ? v : JSON.stringify(v)}`)
+            .join('\n\n')
+        : typeof data === 'string'
+          ? data
+          : JSON.stringify(data, null, 2);
+    return [
+      {
+        noteId: `note-0-${Date.now()}`,
+        title: '',
+        content: readable,
+        template_id: params.template_id,
+        lastSavedAt: new Date().toISOString(),
+        dirty: false,
+        raw: data,
+      },
+    ];
+  }
+  return withRaw;
 }
