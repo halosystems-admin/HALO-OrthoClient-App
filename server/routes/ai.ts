@@ -76,16 +76,54 @@ router.post('/summary', async (req: Request, res: Response) => {
 });
 
 // POST /lab-alerts
+// Accepts either { patientId } (preferred — reads actual file content) or { content } (fallback).
 router.post('/lab-alerts', async (req: Request, res: Response) => {
   try {
-    const { content } = req.body as { content?: string };
+    const { content, patientId } = req.body as { content?: string; patientId?: string };
 
-    if (!content || typeof content !== 'string') {
-      res.status(400).json({ error: 'Content is required for lab alert extraction.' });
+    let labContent = (content && typeof content === 'string') ? content : '';
+
+    // When patientId is provided, read actual file content for accurate lab detection.
+    // This prevents hallucination from file-name-only inputs.
+    const token = req.session.accessToken;
+    if (patientId && token) {
+      try {
+        const allFiles = await fetchAllFilesInFolder(token, patientId);
+        const readableFiles = allFiles.filter(f =>
+          f.name.endsWith('.txt') ||
+          f.name.endsWith('.pdf') ||
+          f.name.endsWith('.docx') ||
+          f.name.endsWith('.doc') ||
+          f.mimeType === 'text/plain' ||
+          f.mimeType === 'application/pdf' ||
+          f.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+          f.mimeType === 'application/msword' ||
+          f.mimeType === 'application/vnd.google-apps.document'
+        ).slice(0, 6);
+
+        const contentParts: string[] = [];
+        for (const file of readableFiles) {
+          const text = await extractTextFromFile(token, file, 1500);
+          if (text.trim()) {
+            contentParts.push(`--- ${file.name} ---\n${text}`);
+          }
+        }
+
+        if (contentParts.length > 0) {
+          labContent = contentParts.join('\n\n');
+        }
+      } catch {
+        // Fall back to provided content string if file reading fails
+      }
+    }
+
+    // If we still have no actual content, return empty — don't hallucinate from nothing
+    if (!labContent.trim()) {
+      res.json([]);
       return;
     }
 
-    const text = await generateText(labAlertsPrompt(content));
+    const text = await generateText(labAlertsPrompt(labContent));
     res.json(safeJsonParse(text, []));
   } catch (err) {
     console.error('Lab alerts error:', err);

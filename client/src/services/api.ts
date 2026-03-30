@@ -227,10 +227,12 @@ export const generatePatientSummary = async (patientName: string, files: DriveFi
   });
 };
 
-export const extractLabAlerts = async (content: string): Promise<LabAlert[]> => {
+// Pass patientId so the server reads actual file content (prevents hallucination from filenames).
+// Falls back to a raw content string if patientId is unavailable.
+export const extractLabAlerts = async (patientId: string): Promise<LabAlert[]> => {
   return request<LabAlert[]>('/api/ai/lab-alerts', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ patientId }),
   });
 };
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sparkles, Loader2, ChevronDown, ChevronUp, Info } from 'lucide-react';
 
 interface Props {
   summary: string[];
@@ -34,14 +34,20 @@ export const SmartSummary: React.FC<Props> = ({ summary, loading }) => {
               <span className="text-sm">Analyzing patient history...</span>
             </div>
           ) : summary.length > 0 ? (
-            <ul className="space-y-2">
-              {summary.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
-                  <span className="block w-1.5 h-1.5 mt-1.5 rounded-full bg-sky-400 shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2">
+                {summary.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+                    <span className="block w-1.5 h-1.5 mt-1.5 rounded-full bg-sky-400 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-1.5 mt-3 pt-2.5 border-t border-sky-100">
+                <Info className="w-3 h-3 text-sky-400 shrink-0" />
+                <span className="text-[10px] text-sky-500">AI-generated from available records — verify against source documents.</span>
+              </div>
+            </>
           ) : (
             <p className="text-sm text-slate-500 italic">No summary available.</p>
           )}

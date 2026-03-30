@@ -146,9 +146,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       setAlerts([]);
       setChatMessages([]);
       setChatInput("");
-      setNoteContent("");
       setUploadMessage(null);
-      setEditMode('write');
       setCurrentFolderId(patient.id);
       setBreadcrumbs([{ id: patient.id, name: patient.name }]);
       setUploadTargetFolderId(patient.id);
@@ -166,17 +164,11 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             if (isMounted) setSummary(res);
           }).catch(() => {});
 
-          const labFiles = firstFiles.filter(f =>
-            f.name.toLowerCase().includes('lab') ||
-            f.name.toLowerCase().includes('blood') ||
-            f.name.toLowerCase().includes('result')
-          );
-          if (labFiles.length > 0) {
-            const labContext = labFiles.map(f => f.name).join(', ');
-            extractLabAlerts(`Patient files indicate lab results: ${labContext}`).then(res => {
-              if (isMounted) setAlerts(res);
-            }).catch(() => {});
-          }
+          // Always attempt lab alert extraction using patientId so the server
+          // reads actual file content — avoids hallucination from filenames only.
+          extractLabAlerts(patient.id).then(res => {
+            if (isMounted) setAlerts(res);
+          }).catch(() => {});
         }
 
         // Fetch remaining pages in background and append (so full list appears without blocking UI)

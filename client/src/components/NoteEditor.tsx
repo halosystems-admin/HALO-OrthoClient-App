@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Save, FileDown, Mail, Loader2, Eye, Pencil } from 'lucide-react';
+import { Save, FileDown, Mail, Loader2, Eye, Pencil, ShieldAlert } from 'lucide-react';
 import type { HaloNote } from '../../../shared/types';
 import { AppStatus } from '../../../shared/types';
 
@@ -120,6 +120,15 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Clinician review banner — mandatory per AI healthcare scribe best practice */}
+      <div className="flex items-start gap-2.5 bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+        <ShieldAlert className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+        <p className="text-xs text-amber-800 leading-snug">
+          <span className="font-bold">AI-Generated Draft — Clinician Review Required.</span>{' '}
+          Verify all clinical details, diagnoses, and plans against the patient record before saving or acting on this note.
+        </p>
       </div>
 
       {/* Preview: field-by-field read-only view */}
