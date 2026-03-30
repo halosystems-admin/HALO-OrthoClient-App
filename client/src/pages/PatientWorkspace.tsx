@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Patient, DriveFile, LabAlert, BreadcrumbItem, ChatMessage, HaloNote, NoteField, CalendarEvent, ScribeSession } from '../../../shared/types';
+import type { Patient, DriveFile, LabAlert, BreadcrumbItem, ChatMessage, HaloNote, NoteField, CalendarEvent, ScribeSession, AssistantOrchestrationResult } from '../../../shared/types';
 import { AppStatus, FOLDER_MIME_TYPE } from '../../../shared/types';
 
 import {
@@ -18,6 +18,7 @@ import {
   createFolder,
   askHaloStream,
   askHalo,
+  orchestrateAssistant,
   generateNotePreview,
   saveNoteAsDocx,
   generatePrepNote,
@@ -30,7 +31,7 @@ import {
   Upload, Calendar, Clock, CheckCircle2, ChevronLeft, Loader2,
   CloudUpload, Pencil, X, Trash2, FolderOpen, MessageCircle,
   FolderPlus, ChevronRight, ExternalLink, FileText, Layers, Plus,
-  History,
+  History, Bot,
 } from 'lucide-react';
 import { SmartSummary } from '../features/smart-summary/SmartSummary';
 import { LabAlerts } from '../features/lab-alerts/LabAlerts';
@@ -39,6 +40,7 @@ import { FileViewer } from '../components/FileViewer';
 import { FileBrowser } from '../components/FileBrowser';
 import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
+import { PatientAssistant } from '../components/PatientAssistant';
 import { getErrorMessage } from '../utils/formatting';
 
 const MAX_MAIN_COMPLAINT_LEN = 80;
@@ -125,9 +127,11 @@ interface Props {
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   templateId?: string;
   calendarPrepEvent?: CalendarEvent | null;
+  /** Optional per-user letterhead stored in Drive (uploaded from Settings). */
+  letterheadDriveFileId?: string;
 }
 
-export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, templateId: propTemplateId, calendarPrepEvent }) => {
+export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, templateId: propTemplateId, calendarPrepEvent, letterheadDriveFileId }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [summary, setSummary] = useState<string[]>([]);
   const [alerts, setAlerts] = useState<LabAlert[]>([]);
@@ -146,7 +150,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [selectedTemplatesForGenerate, setSelectedTemplatesForGenerate] = useState<string[]>(['clinical_note']);
   const [templateSearch, setTemplateSearch] = useState('');
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
-  const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat' | 'sessions'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat' | 'assistant' | 'sessions'>('overview');
   const [savingNoteIndex, setSavingNoteIndex] = useState<number | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -196,6 +200,15 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   const chatLongWaitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   chatMessagesRef.current = chatMessages;
+  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([]);
+  const [assistantInput, setAssistantInput] = useState('');
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantLongWait, setAssistantLongWait] = useState(false);
+  const [assistantLatestResult, setAssistantLatestResult] = useState<AssistantOrchestrationResult | null>(null);
+  const [assistantDocSaving, setAssistantDocSaving] = useState(false);
+  const assistantMessagesRef = useRef<ChatMessage[]>([]);
+  const assistantLongWaitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  assistantMessagesRef.current = assistantMessages;
 
   // Create folder state
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
@@ -897,6 +910,97 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     }
   };
 
+  const handleUseLatestTranscriptForAssistant = () => {
+    if (!currentTranscript.trim()) {
+      onToast('No transcript available yet. Record or upload first.', 'info');
+      return;
+    }
+    setAssistantInput(currentTranscript);
+    setActiveTab('assistant');
+  };
+
+  const handleSendAssistant = async () => {
+    const requestText = assistantInput.trim();
+    if (!requestText || assistantLoading) return;
+
+    const userMessage: ChatMessage = { role: 'user', content: requestText, timestamp: Date.now() };
+    setAssistantMessages(prev => [...prev, userMessage]);
+    setAssistantInput('');
+    setAssistantLoading(true);
+    setAssistantLongWait(false);
+
+    if (assistantLongWaitTimerRef.current) clearTimeout(assistantLongWaitTimerRef.current);
+    assistantLongWaitTimerRef.current = setTimeout(() => setAssistantLongWait(true), 8000);
+
+    try {
+      const result = await orchestrateAssistant(
+        patient.id,
+        requestText,
+        assistantMessagesRef.current,
+        consultContext?.trim() || undefined
+      );
+      setAssistantLatestResult(result);
+      const assistantText =
+        `Drafted ${result.placeholders.DOCUMENT_TYPE} for ${result.placeholders.NAME} (${result.placeholders.DOB}).\n\n` +
+        `${result.documentBody}\n\n` +
+        (result.tasks.length ? `Tasks:\n- ${result.tasks.join('\n- ')}` : 'No explicit follow-up tasks.');
+      setAssistantMessages(prev => [...prev, { role: 'assistant', content: assistantText, timestamp: Date.now() }]);
+      if (result.warnings.length > 0) {
+        onToast(`Assistant warnings: ${result.warnings[0]}`, 'info');
+      }
+    } catch (err) {
+      onToast(getErrorMessage(err), 'error');
+      setAssistantMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Assistant failed to process the request. Please try again with clearer dictation.',
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      setAssistantLoading(false);
+      setAssistantLongWait(false);
+      if (assistantLongWaitTimerRef.current) {
+        clearTimeout(assistantLongWaitTimerRef.current);
+        assistantLongWaitTimerRef.current = null;
+      }
+    }
+  };
+
+  const handleGenerateAssistantDocx = async () => {
+    if (!assistantLatestResult?.documentBody?.trim()) {
+      onToast('No assistant document body available yet.', 'info');
+      return;
+    }
+    setAssistantDocSaving(true);
+    try {
+      const rawDocType = (assistantLatestResult.placeholders.DOCUMENT_TYPE || 'Clinical Note').replace(/[^\w\s-]/g, '').trim();
+      const docType = rawDocType && rawDocType.toLowerCase() !== 'other' ? rawDocType : 'Clinical Note';
+      const name = (assistantLatestResult.placeholders.NAME || patient.name).replace(/[^\w\s-]/g, '').trim();
+      const date = (assistantLatestResult.placeholders.DATE || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '');
+      const fileName = `${docType || 'Clinical Note'} - ${name || patient.name} - ${date || new Date().toISOString().slice(0, 10)}.docx`;
+
+      const docxRes = await saveNoteAsDocx({
+        patientId: patient.id,
+        template_id: templateId || 'clinical_note',
+        text: assistantLatestResult.documentBody,
+        fileName,
+        useLetterhead: true,
+        letterheadPlaceholders: assistantLatestResult.placeholders,
+        letterheadDriveFileId,
+      });
+      await loadFolderContents(currentFolderId);
+      onDataChange();
+      if (docxRes.letterheadWarning) {
+        onToast(docxRes.letterheadWarning, 'info');
+      } else {
+        onToast('Assistant DOCX generated and saved to this patient folder.', 'success');
+      }
+    } catch (err) {
+      onToast(getErrorMessage(err), 'error');
+    } finally {
+      setAssistantDocSaving(false);
+    }
+  };
+
   // If opened from a calendar booking, generate a light prep note and start in the editor
   useEffect(() => {
     let cancelled = false;
@@ -1249,6 +1353,9 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             <button onClick={() => setActiveTab('notes')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap ${activeTab === 'notes' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Editor &amp; Scribe</button>
             <button onClick={() => setActiveTab('chat')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'chat' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
               <MessageCircle size={14} /> Ask HALO
+            </button>
+            <button onClick={() => setActiveTab('assistant')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'assistant' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+              <Bot size={14} /> Assistant
             </button>
             <button onClick={() => setActiveTab('sessions')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'sessions' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
               <History size={14} /> Previous Sessions
@@ -1633,6 +1740,22 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                 </div>
               )}
             </>
+          ) : activeTab === 'assistant' ? (
+            <PatientAssistant
+              patientName={patient.name}
+              transcriptHint={currentTranscript}
+              messages={assistantMessages}
+              input={assistantInput}
+              loading={assistantLoading}
+              longWait={assistantLongWait}
+              latestResult={assistantLatestResult}
+              onInputChange={setAssistantInput}
+              onSend={handleSendAssistant}
+              onUseTranscript={handleUseLatestTranscriptForAssistant}
+              onGenerateDoc={handleGenerateAssistantDocx}
+              generatingDoc={assistantDocSaving}
+              onError={(message) => onToast(message, 'error')}
+            />
           ) : (
             <PatientChat
               patientName={patient.name}

@@ -7,6 +7,7 @@ import type {
   HaloNote,
   CalendarEvent,
   ScribeSession,
+  AssistantOrchestrationResult,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -72,21 +73,30 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
     );
   }
 
+  const raw = await res.text();
+
   if (res.status === 401) {
     window.location.href = '/';
     throw new ApiError('Not authenticated', 401);
   }
 
   let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    const text = await res.text().catch(() => 'Unable to read response');
-    console.error('[API] Non-JSON response:', text);
-    throw new ApiError(
-      `Server returned a non-JSON response (${res.status}). Please try again.`,
-      res.status
-    );
+  if (raw.trim()) {
+    try {
+      data = JSON.parse(raw) as unknown;
+    } catch {
+      const preview = raw.trim().replace(/\s+/g, ' ').slice(0, 500);
+      console.error('[API] Non-JSON response:', preview);
+      if (!res.ok) {
+        throw new ApiError(preview || `Request failed (${res.status})`, res.status);
+      }
+      throw new ApiError(preview || `Invalid JSON from server (${res.status})`, res.status);
+    }
+  } else {
+    data = {};
+    if (!res.ok) {
+      throw new ApiError(`Request failed (${res.status}, empty body)`, res.status);
+    }
   }
 
   if (!res.ok) {
@@ -433,8 +443,21 @@ export const saveNoteAsDocx = (params: {
   text: string;
   fileName?: string;
   user_id?: string;
+  allowFallbackDocx?: boolean;
+  /** When true, merges into HALO letterhead from Drive (or local path); skips Halo generate API. */
+  useLetterhead?: boolean;
+  /** Optional; prepended inside the single {{body}} field (document type, patient, date) before clinical text. */
+  letterheadPlaceholders?: { NAME?: string; DOB?: string; DATE?: string; DOCUMENT_TYPE?: string };
+  /** Optional per-user letterhead stored in Drive (uploaded from Settings). */
+  letterheadDriveFileId?: string;
 }) =>
-  request<{ success: boolean; fileId: string; name: string }>('/api/halo/generate-note', {
+  request<{
+    success: boolean;
+    fileId: string;
+    name: string;
+    usedLetterhead?: boolean;
+    letterheadWarning?: string;
+  }>('/api/halo/generate-note', {
     method: 'POST',
     body: JSON.stringify({
       template_id: params.template_id,
@@ -443,8 +466,21 @@ export const saveNoteAsDocx = (params: {
       patientId: params.patientId,
       fileName: params.fileName,
       user_id: params.user_id,
+      allowFallbackDocx: params.allowFallbackDocx ?? false,
+      useLetterhead: params.useLetterhead ?? false,
+      letterheadPlaceholders: params.letterheadPlaceholders,
+      letterheadDriveFileId: params.letterheadDriveFileId,
     }),
   });
+
+export const uploadLetterhead = async (file: File): Promise<{ fileId: string; name: string }> => {
+  const mimeType = file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const contentBase64 = await fileToBase64(file);
+  return request<{ fileId: string; name: string }>('/api/drive/letterhead', {
+    method: 'POST',
+    body: JSON.stringify({ name: file.name, mimeType, contentBase64 }),
+  });
+};
 
 export const searchPatientsByConcept = async (
   query: string,
@@ -532,6 +568,18 @@ export const askHaloStream = async (
   } finally {
     clearTimeout(timeoutId);
   }
+};
+
+export const orchestrateAssistant = async (
+  patientId: string,
+  transcription: string,
+  history: ChatMessage[],
+  extraContext?: string
+): Promise<AssistantOrchestrationResult> => {
+  return request<AssistantOrchestrationResult>('/api/ai/assistant-orchestrate', {
+    method: 'POST',
+    body: JSON.stringify({ patientId, transcription, history, extraContext }),
+  });
 };
 
 // --- SETTINGS ---

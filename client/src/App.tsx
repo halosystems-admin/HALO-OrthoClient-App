@@ -344,6 +344,7 @@ export const App = () => {
             onDataChange={refreshPatients}
             onToast={showToast}
             templateId={userSettings?.templateId || 'clinical_note'}
+            letterheadDriveFileId={userSettings?.letterheadDriveFileId}
             calendarPrepEvent={
               calendarPrepEvent && calendarPrepEvent.patientId === activePatient.id
                 ? calendarPrepEvent

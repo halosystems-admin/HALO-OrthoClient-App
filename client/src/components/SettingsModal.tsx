@@ -4,7 +4,7 @@ import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
   FileText, Upload, Check, AlertCircle, Send, Plus, Image as ImageIcon, Trash2,
 } from 'lucide-react';
-import { requestNewTemplate } from '../services/api';
+import { requestNewTemplate, uploadLetterhead } from '../services/api';
 
 const HALO_TEMPLATE_OPTIONS = [
   { id: 'clinical_note', name: 'Clinical Note' },
@@ -25,6 +25,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   customTemplateName: '',
   templateId: 'clinical_note',
   homeScreenImageUrl: '',
+  letterheadDriveFileId: '',
+  letterheadFileName: '',
 };
 
 const HOME_SCREEN_MAX_WIDTH = 1200;
@@ -92,6 +94,9 @@ export const SettingsModal: React.FC<Props> = ({
   const [requestSending, setRequestSending] = useState(false);
   const requestFileInputRef = useRef<HTMLInputElement>(null);
   const homeScreenInputRef = useRef<HTMLInputElement>(null);
+  const letterheadInputRef = useRef<HTMLInputElement>(null);
+  const [letterheadUploading, setLetterheadUploading] = useState(false);
+  const [letterheadError, setLetterheadError] = useState('');
   const [homeScreenLoading, setHomeScreenLoading] = useState(false);
   const [homeScreenError, setHomeScreenError] = useState('');
 
@@ -167,6 +172,35 @@ export const SettingsModal: React.FC<Props> = ({
       setUploadError('Failed to read file.');
     }
     e.target.value = '';
+  };
+
+  const handleLetterheadUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLetterheadError('');
+    setLetterheadUploading(true);
+    try {
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      if (!['.docx', '.dotx'].includes(ext)) {
+        setLetterheadError('Please upload a .docx or .dotx file.');
+        return;
+      }
+      const res = await uploadLetterhead(file);
+      setForm(prev => ({
+        ...prev,
+        letterheadDriveFileId: res.fileId,
+        letterheadFileName: res.name,
+      }));
+      onToast?.('Letterhead uploaded. Click Save to apply it.', 'success');
+      setEditMode(true);
+    } catch (err: unknown) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as Error).message) : 'Letterhead upload failed.';
+      setLetterheadError(msg);
+      onToast?.(msg, 'error');
+    } finally {
+      setLetterheadUploading(false);
+      e.target.value = '';
+    }
   };
 
 
@@ -379,6 +413,62 @@ export const SettingsModal: React.FC<Props> = ({
                 )}
               </div>
             )}
+          </div>
+
+          {/* Letterhead (per-user) */}
+          <div className="border-t border-slate-100 pt-6">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+              <FileText size={12} /> Letterhead
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Upload a Word letterhead (<span className="font-mono">.docx</span> / <span className="font-mono">.dotx</span>) containing a single placeholder <span className="font-mono">{'{{body}}'}</span>.
+              The Assistant “Generate DOCX” will merge into it and save to the patient folder.
+            </p>
+
+            <input
+              ref={letterheadInputRef}
+              type="file"
+              accept=".docx,.dotx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+              className="hidden"
+              onChange={handleLetterheadUpload}
+            />
+
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-800 truncate">
+                  {form.letterheadDriveFileId ? (form.letterheadFileName || 'Letterhead uploaded') : 'No letterhead uploaded yet'}
+                </p>
+                <p className="text-xs text-slate-500 truncate">
+                  {form.letterheadDriveFileId ? `Drive file id: ${form.letterheadDriveFileId}` : 'Upload once; it will be reused for all generated docs.'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => letterheadInputRef.current?.click()}
+                  disabled={letterheadUploading}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
+                >
+                  <Upload size={14} /> {letterheadUploading ? 'Uploading…' : (form.letterheadDriveFileId ? 'Replace' : 'Upload')}
+                </button>
+                {form.letterheadDriveFileId && (
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, letterheadDriveFileId: '', letterheadFileName: '' }))}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition"
+                    title="Stop using uploaded letterhead"
+                  >
+                    <Trash2 size={14} /> Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            {letterheadError && (
+              <p className="mt-1.5 text-xs text-rose-600">{letterheadError}</p>
+            )}
+            <p className="mt-2 text-xs text-slate-400">
+              After uploading/replacing, click <span className="font-semibold">Save</span> to apply.
+            </p>
           </div>
 
           {/* Home screen image — shown when no patient is selected */}

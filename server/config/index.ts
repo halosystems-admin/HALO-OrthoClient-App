@@ -58,6 +58,13 @@ export const config = {
   haloMobileUserId: process.env.HALO_MOBILE_USER_ID || 'fcb5cfec-e10e-4c3a-bd44-064a788a6243',
   haloMobileTemplateId: process.env.HALO_MOBILE_TEMPLATE_ID || 'report',
 
+  /** Google Drive file id for Word letterhead (.dotx/.docx). Empty env var disables Drive and uses local path only. */
+  haloLetterheadDriveFileId:
+    process.env.HALO_LETTERHEAD_DRIVE_FILE_ID !== undefined
+      ? process.env.HALO_LETTERHEAD_DRIVE_FILE_ID.trim()
+      : '1X-iJNyXU0p5qLI5kF8Hix-FBjQFOibwi7pw3WNgHmf8',
+  haloLetterheadLocalPath: (process.env.HALO_LETTERHEAD_LOCAL_PATH || '').trim(),
+
   // Template request email (optional)
   adminEmail: process.env.ADMIN_EMAIL || 'admin@halo.africa',
   smtpHost: process.env.SMTP_HOST || '',

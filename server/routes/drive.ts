@@ -850,6 +850,101 @@ router.post('/patients/:id/sessions', async (req: Request, res: Response) => {
 
 const SETTINGS_FILE_NAME = 'halo_user_settings.json';
 
+// --- LETTERHEAD (per-user, stored in Drive) ---
+const LETTERHEAD_FOLDER_NAME = 'HALO Config';
+
+async function getOrCreateHaloConfigFolder(token: string, rootId: string): Promise<string> {
+  const q = encodeURIComponent(
+    `'${rootId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${LETTERHEAD_FOLDER_NAME}' and trashed=false`
+  );
+  const data = await driveRequest(token, `/files?q=${q}&fields=files(id,name)`);
+  if (data.files && data.files.length > 0) return data.files[0].id;
+
+  const createRes = await fetch(`${driveApi}/files?supportsAllDrives=true`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: LETTERHEAD_FOLDER_NAME,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [rootId],
+    }),
+  });
+  if (!createRes.ok) {
+    const errText = await createRes.text().catch(() => '');
+    throw new Error(`[Drive ${createRes.status}] Failed to create ${LETTERHEAD_FOLDER_NAME} folder.${errText ? ` ${errText}` : ''}`);
+  }
+  const created = (await createRes.json()) as { id: string };
+  return created.id;
+}
+
+// POST /letterhead
+// Body: { name, mimeType, contentBase64 }
+router.post('/letterhead', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const { name, mimeType, contentBase64 } = req.body as { name?: string; mimeType?: string; contentBase64?: string };
+    if (!name || !contentBase64) {
+      res.status(400).json({ error: 'name and contentBase64 are required.' });
+      return;
+    }
+    const mt = mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+    ];
+    if (!allowed.includes(mt)) {
+      res.status(400).json({ error: 'Please upload a Word .docx/.dotx file.' });
+      return;
+    }
+
+    const buffer = Buffer.from(contentBase64, 'base64');
+    if (!buffer.length) {
+      res.status(400).json({ error: 'Uploaded file was empty.' });
+      return;
+    }
+    if (buffer.length > 10 * 1024 * 1024) {
+      res.status(400).json({ error: 'Letterhead too large. Keep it under 10MB.' });
+      return;
+    }
+
+    const rootId = await getHaloRootFolder(token);
+    const cfgFolderId = await getOrCreateHaloConfigFolder(token, rootId);
+
+    // Upload as a binary Word file (NOT Google Doc conversion).
+    const safeName = sanitizeString(name.replace(/[\\/:*?"<>|]/g, '').trim() || 'Letterhead.docx');
+    const metadata = { name: safeName, parents: [cfgFolderId], mimeType: mt };
+    const boundary = 'halo_letterhead_boundary';
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Type: ${mt}\r\nContent-Transfer-Encoding: base64\r\n\r\n${contentBase64}\r\n`),
+      Buffer.from(`--${boundary}--`),
+    ]);
+
+    const upRes = await fetch(`${uploadApi}/files?uploadType=multipart&supportsAllDrives=true`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    });
+    if (!upRes.ok) {
+      const errText = await upRes.text().catch(() => '');
+      throw new Error(`[Drive ${upRes.status}] Failed to upload letterhead.${errText ? ` ${errText.slice(0, 400)}` : ''}`);
+    }
+    const data = (await upRes.json()) as { id: string; name?: string };
+    res.json({ fileId: data.id, name: data.name || safeName });
+  } catch (err) {
+    console.error('Upload letterhead error:', err);
+    const message = err instanceof Error ? err.message : 'Failed to upload letterhead.';
+    res.status(500).json({ error: message });
+  }
+});
+
 async function findSettingsFile(token: string, rootId: string): Promise<string | null> {
   const query = encodeURIComponent(
     `'${rootId}' in parents and name='${SETTINGS_FILE_NAME}' and mimeType='application/json' and trashed=false`

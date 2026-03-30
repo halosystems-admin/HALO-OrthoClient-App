@@ -11,10 +11,88 @@ import {
   chatSystemPrompt,
   geminiTranscriptionPrompt,
   fileDescriptionPrompt,
+  assistantOrchestrationPrompt,
 } from '../utils/prompts';
+import type { AssistantOrchestrationResult } from '../../shared/types';
 
 const router = Router();
 router.use(requireAuth);
+
+function toAssistantFallback(reason: string): AssistantOrchestrationResult {
+  return {
+    placeholders: {
+      NAME: 'Not provided',
+      DOB: 'Not provided',
+      DATE: new Date().toISOString().slice(0, 10),
+      DOCUMENT_TYPE: 'Clinical Note',
+    },
+    documentBody: 'Assistant could not generate content. Please retry with clearer dictation.',
+    tasks: [],
+    warnings: [reason],
+  };
+}
+
+function normalizeAssistantResult(raw: unknown): AssistantOrchestrationResult {
+  const fallback = toAssistantFallback('Invalid assistant response.');
+  if (!raw || typeof raw !== 'object') return fallback;
+  const obj = raw as Record<string, unknown>;
+  const placeholders = (obj.placeholders && typeof obj.placeholders === 'object'
+    ? obj.placeholders
+    : {}) as Record<string, unknown>;
+
+  const out: AssistantOrchestrationResult = {
+    placeholders: {
+      NAME: String(placeholders.NAME ?? 'Not provided'),
+      DOB: String(placeholders.DOB ?? 'Not provided'),
+      DATE: String(placeholders.DATE ?? new Date().toISOString().slice(0, 10)),
+      DOCUMENT_TYPE: String(placeholders.DOCUMENT_TYPE ?? 'Clinical Note'),
+    },
+    documentBody: String(obj.documentBody ?? '').trim(),
+    tasks: Array.isArray(obj.tasks) ? obj.tasks.map((t) => String(t)) : [],
+    warnings: Array.isArray(obj.warnings) ? obj.warnings.map((w) => String(w)) : [],
+  };
+
+  if (!out.documentBody) {
+    out.documentBody = fallback.documentBody;
+    out.warnings.push('Assistant returned empty documentBody.');
+  }
+  return out;
+}
+
+async function buildPatientContext(token: string, patientId: string): Promise<string> {
+  const allFiles = await fetchAllFilesInFolder(token, patientId);
+  const readableFiles = allFiles.filter(f =>
+    f.name.endsWith('.txt') ||
+    f.name.endsWith('.pdf') ||
+    f.name.endsWith('.docx') ||
+    f.name.endsWith('.doc') ||
+    f.mimeType === 'text/plain' ||
+    f.mimeType === 'application/pdf' ||
+    f.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    f.mimeType === 'application/msword' ||
+    f.mimeType === 'application/vnd.google-apps.document'
+  ).slice(0, 12);
+
+  const parts: string[] = [];
+  const fileList = allFiles
+    .filter(f => f.mimeType !== 'application/vnd.google-apps.folder')
+    .map(f => `- ${f.name} (${f.mimeType})`)
+    .join('\n');
+  parts.push(`Patient files:\n${fileList}`);
+
+  for (const file of readableFiles) {
+    const textContent = await extractTextFromFile(token, file, 2500);
+    if (textContent.trim()) {
+      parts.push(`\n--- File: ${file.name} ---\n${textContent}`);
+    }
+  }
+
+  const rawContext = parts.join('\n');
+  if (rawContext.length <= 24000) return rawContext;
+  const head = rawContext.slice(0, 17000);
+  const tail = rawContext.slice(-7000);
+  return `${head}\n\n[...CONTEXT TRUNCATED FOR SIZE...]\n\n${tail}`;
+}
 
 // POST /summary — enhanced: reads actual file content (PDF, DOCX, TXT, Google Docs)
 router.post('/summary', async (req: Request, res: Response) => {
@@ -327,6 +405,53 @@ router.post('/chat', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Chat error:', err);
     res.json({ reply: 'I apologize, but I encountered an error processing your question. Please try again.' });
+  }
+});
+
+// POST /assistant-orchestrate - structured clinical assistant output using transcript + patient context
+router.post('/assistant-orchestrate', async (req: Request, res: Response) => {
+  try {
+    const { patientId, transcription, extraContext, history } = req.body as {
+      patientId?: string;
+      transcription?: string;
+      extraContext?: string;
+      history?: Array<{ role: string; content: string }>;
+    };
+
+    if (!patientId || !transcription || typeof transcription !== 'string') {
+      res.status(400).json({ error: 'patientId and transcription are required.' });
+      return;
+    }
+
+    const token = req.session.accessToken!;
+    // Always build canonical folder context from patient files.
+    // extraContext is appended (never replaces folder context).
+    const folderContext = await buildPatientContext(token, patientId);
+    const context = (typeof extraContext === 'string' && extraContext.trim())
+      ? `${folderContext}\n\nAdditional doctor context:\n${extraContext.trim()}`
+      : folderContext;
+
+    const historyText = (history || [])
+      .slice(-8)
+      .map((m) => `${m.role === 'user' ? 'Doctor' : 'Assistant'}: ${m.content}`)
+      .join('\n');
+
+    const prompt = assistantOrchestrationPrompt({
+      transcription,
+      patientContext: context,
+      conversationHistory: historyText,
+    });
+
+    const raw = await generateText(prompt);
+    const parsed = safeJsonParse<unknown>(raw, null);
+    if (!parsed) {
+      res.json(toAssistantFallback('Model returned invalid JSON.'));
+      return;
+    }
+    res.json(normalizeAssistantResult(parsed));
+  } catch (err) {
+    console.error('Assistant orchestration error:', err);
+    res.json(toAssistantFallback('Assistant request failed.'));
   }
 });
 

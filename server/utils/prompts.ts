@@ -3,6 +3,7 @@
  */
 
 export const MAX_CONTENT_LENGTH = 5000;
+export const MAX_ASSISTANT_CONTEXT_LENGTH = 24000;
 
 export function summaryPrompt(patientName: string, fileContext: string): string {
   return `
@@ -93,5 +94,48 @@ ${truncated}
 In 2–4 short bullet points, describe clearly what this file contains and why it might be clinically relevant (history, investigations, imaging, lab results, correspondence, etc.).
 Avoid speculation and do not invent diagnoses that are not supported by the text.
 Return ONLY a raw Markdown string (no JSON).
+`;
+}
+
+export function assistantOrchestrationPrompt(params: {
+  transcription: string;
+  patientContext: string;
+  conversationHistory?: string;
+}): string {
+  const context = (params.patientContext || '').slice(0, MAX_ASSISTANT_CONTEXT_LENGTH);
+  const history = params.conversationHistory?.trim()
+    ? `Previous assistant turns:\n${params.conversationHistory}\n\n`
+    : '';
+
+  return `
+You are HALO Clinical Assistant for a doctor.
+Use ONLY the provided patient context and dictation/task request.
+Never invent patient facts. If uncertain or missing, write "Not provided".
+
+${history}Doctor dictation / request:
+${params.transcription}
+
+Patient context:
+${context}
+
+Return STRICT raw JSON only (no markdown, no code fences):
+{
+  "placeholders": {
+    "NAME": "string",
+    "DOB": "string",
+    "DATE": "YYYY-MM-DD",
+    "DOCUMENT_TYPE": "Operative Note | Discharge Summary | Task List | Clinical Note | Other"
+  },
+  "documentBody": "string",
+  "tasks": ["string"],
+  "warnings": ["string"]
+}
+
+Rules:
+- Infer requested document/task from the dictation.
+- Prefer NAME and DOB from patient context, not assumptions.
+- DATE should be today's date if not explicitly provided.
+- "documentBody" must be suitable to paste into a Word/Google Doc template.
+- Keep tone clinical, concise, and professional.
 `;
 }

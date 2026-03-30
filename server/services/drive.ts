@@ -239,12 +239,20 @@ export async function uploadToDrive(
 /**
  * Download a file's text content from Google Drive.
  */
+function driveFileMediaUrl(fileId: string): string {
+  const q = new URLSearchParams({ alt: 'media', supportsAllDrives: 'true' });
+  return `${driveApi}/files/${encodeURIComponent(fileId)}?${q}`;
+}
+
 export async function downloadTextFromDrive(token: string, fileId: string): Promise<string> {
-  const res = await fetch(`${driveApi}/files/${fileId}?alt=media`, {
+  const res = await fetch(driveFileMediaUrl(fileId), {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    throw new Error(`[Drive ${res.status}] Failed to download text for file ${fileId}`);
+    const errBody = await res.text().catch(() => '');
+    throw new Error(
+      `[Drive ${res.status}] Failed to download text for file ${fileId}${errBody ? `: ${errBody.slice(0, 240)}` : ''}`
+    );
   }
   return res.text();
 }
@@ -253,14 +261,59 @@ export async function downloadTextFromDrive(token: string, fileId: string): Prom
  * Download a file as a binary buffer from Google Drive.
  */
 export async function downloadFileBuffer(token: string, fileId: string): Promise<Buffer> {
-  const res = await fetch(`${driveApi}/files/${fileId}?alt=media`, {
+  const res = await fetch(driveFileMediaUrl(fileId), {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    throw new Error(`[Drive ${res.status}] Failed to download file ${fileId}`);
+    const errBody = await res.text().catch(() => '');
+    const hint =
+      res.status === 403 || res.status === 404
+        ? ' Share the file with the signed-in Google account or add HALO_LETTERHEAD_LOCAL_PATH on the server.'
+        : '';
+    throw new Error(
+      `[Drive ${res.status}] Failed to download file ${fileId}.${errBody ? ` ${errBody.slice(0, 240)}` : ''}${hint}`
+    );
   }
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+const DOCX_EXPORT_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * Binary .docx/.dotx via alt=media, or Google Doc exported to .docx (docs cannot use alt=media).
+ */
+export async function downloadDriveFileAsDocxTemplateBuffer(token: string, fileId: string): Promise<Buffer> {
+  const metaRes = await fetch(
+    `${driveApi}/files/${encodeURIComponent(fileId)}?fields=mimeType,name&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!metaRes.ok) {
+    const errText = await metaRes.text().catch(() => '');
+    throw new Error(
+      `[Drive ${metaRes.status}] Failed to read file metadata ${fileId}.${errText ? ` ${errText.slice(0, 240)}` : ''}`
+    );
+  }
+  const meta = (await metaRes.json()) as { mimeType?: string; name?: string };
+  const mime = meta.mimeType || '';
+
+  if (mime === GOOGLE_DOC_MIME) {
+    const q = new URLSearchParams({ mimeType: DOCX_EXPORT_MIME });
+    const exportRes = await fetch(
+      `${driveApi}/files/${encodeURIComponent(fileId)}/export?${q}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!exportRes.ok) {
+      const errText = await exportRes.text().catch(() => '');
+      throw new Error(
+        `[Drive ${exportRes.status}] Failed to export Google Doc as DOCX ${fileId}.${errText ? ` ${errText.slice(0, 240)}` : ''}`
+      );
+    }
+    return Buffer.from(await exportRes.arrayBuffer());
+  }
+
+  return downloadFileBuffer(token, fileId);
 }
 
 /**

@@ -1,14 +1,30 @@
 import { Router, Request, Response } from 'express';
 import nodemailer from 'nodemailer';
+import { Document, Packer, Paragraph } from 'docx';
 import { requireAuth } from '../middleware/requireAuth';
 import { config } from '../config';
 import { getTemplates, generateNote } from '../services/haloApi';
 import { getOrCreatePatientNotesFolder, uploadToDrive } from '../services/drive';
+import { buildLetterheadBody, fetchLetterheadTemplateBuffer, mergeLetterheadDocx } from '../services/letterheadDocx';
 
 const router = Router();
 router.use(requireAuth);
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+async function textToBasicDocxBuffer(text: string): Promise<Buffer> {
+  const lines = text.split(/\r?\n/);
+  const doc = new Document({
+    sections: [
+      {
+        children: lines.length
+          ? lines.map((line) => new Paragraph({ text: line }))
+          : [new Paragraph({ text: '' })],
+      },
+    ],
+  });
+  return Buffer.from(await Packer.toBuffer(doc));
+}
 
 function isSmtpConfigured(): boolean {
   return Boolean(config.smtpHost && config.smtpUser && config.smtpPass);
@@ -68,12 +84,25 @@ router.post('/templates', async (req: Request, res: Response) => {
 });
 
 // POST /api/halo/generate-note
-// Body: { user_id?, template_id?, text, return_type: 'note' | 'docx', patientId?, fileName?, useMobileConfig? }
+// Body: { user_id?, template_id?, text, return_type: 'note' | 'docx', patientId?, fileName?, useMobileConfig?, allowFallbackDocx?, useLetterhead?, letterheadPlaceholders? }
+// If useLetterhead is true and return_type === 'docx', merges `text` into Drive/local letterhead template (docxtemplater) and uploads; skips Halo API.
 // If useMobileConfig is true, use config.haloMobileUserId and config.haloMobileTemplateId (for mobile preview).
 // If return_type === 'docx' and patientId is set, uploads DOCX to patient's Patient Notes folder and returns { success, fileId, name }.
 router.post('/generate-note', async (req: Request, res: Response) => {
   try {
-    const { user_id, template_id, text, return_type, patientId, fileName, useMobileConfig } = req.body as {
+    const {
+      user_id,
+      template_id,
+      text,
+      return_type,
+      patientId,
+      fileName,
+      useMobileConfig,
+      allowFallbackDocx,
+      useLetterhead,
+      letterheadPlaceholders,
+      letterheadDriveFileId,
+    } = req.body as {
       user_id?: string;
       template_id?: string;
       text: string;
@@ -81,10 +110,47 @@ router.post('/generate-note', async (req: Request, res: Response) => {
       patientId?: string;
       fileName?: string;
       useMobileConfig?: boolean;
+      allowFallbackDocx?: boolean;
+      useLetterhead?: boolean;
+      letterheadPlaceholders?: { NAME?: string; DOB?: string; DATE?: string; DOCUMENT_TYPE?: string };
+      letterheadDriveFileId?: string;
     };
 
     if (typeof text !== 'string') {
       res.status(400).json({ error: 'text is required.' });
+      return;
+    }
+
+    if (return_type === 'docx' && useLetterhead === true) {
+      if (!patientId || !req.session.accessToken) {
+        res.status(400).json({ error: 'patientId and authentication are required for letterhead DOCX.' });
+        return;
+      }
+      const token = req.session.accessToken;
+      const patientNotesFolderId = await getOrCreatePatientNotesFolder(token, patientId);
+      const baseName = fileName && fileName.trim() ? fileName.replace(/\.docx$/i, '') : `Clinical_Note_${new Date().toISOString().split('T')[0]}`;
+      const finalFileName = baseName.endsWith('.docx') ? baseName : `${baseName}.docx`;
+      const composed = buildLetterheadBody(text, letterheadPlaceholders);
+      let buffer: Buffer;
+      let letterheadWarning: string | undefined;
+      try {
+        const tmpl = await fetchLetterheadTemplateBuffer(token, { driveFileId: letterheadDriveFileId });
+        buffer = mergeLetterheadDocx(tmpl, composed);
+      } catch (letterErr) {
+        console.error('[Halo] letterhead DOCX failed, using plain DOCX fallback:', letterErr);
+        const msg = letterErr instanceof Error ? letterErr.message : 'Letterhead merge failed.';
+        buffer = await textToBasicDocxBuffer(composed);
+        letterheadWarning = `${msg} Saved without letterhead — use {{body}} in the template, share the Drive file with this account, or set HALO_LETTERHEAD_LOCAL_PATH.`;
+      }
+      const fileId = await uploadToDrive(token, finalFileName, DOCX_MIME, patientNotesFolderId, buffer);
+      res.json({
+        success: true,
+        fileId,
+        name: finalFileName,
+        usedLetterhead: !letterheadWarning,
+        usedDocxFallback: Boolean(letterheadWarning),
+        letterheadWarning,
+      });
       return;
     }
 
@@ -100,7 +166,21 @@ router.post('/generate-note', async (req: Request, res: Response) => {
         : 'clinical_note';
     const templateId = useMobileConfig ? config.haloMobileTemplateId : (template_id || defaultTemplateId);
     console.log('[Halo] generate-note request:', { userId: userId.slice(0, 8) + '…', templateId, return_type, textLength: text.length });
-    const result = await generateNote({ user_id: userId, template_id: templateId, text, return_type });
+    let result: Awaited<ReturnType<typeof generateNote>> | null = null;
+    let usedDocxFallback = false;
+    try {
+      result = await generateNote({ user_id: userId, template_id: templateId, text, return_type });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const canFallback =
+        return_type === 'docx' &&
+        allowFallbackDocx === true &&
+        (message.includes('service unavailable') || message.includes('502'));
+      if (!canFallback) throw err;
+      console.warn('[Halo] generate-note docx fallback activated:', message);
+      result = await textToBasicDocxBuffer(text);
+      usedDocxFallback = true;
+    }
 
     if (return_type === 'note') {
       res.json({ notes: result });
@@ -127,7 +207,7 @@ router.post('/generate-note', async (req: Request, res: Response) => {
       buffer
     );
 
-    res.json({ success: true, fileId, name: finalFileName });
+    res.json({ success: true, fileId, name: finalFileName, usedDocxFallback });
   } catch (err) {
     console.error('[Halo] generate-note error:', err);
     const message = err instanceof Error ? err.message : 'Note generation failed.';

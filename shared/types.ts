@@ -38,6 +38,18 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface AssistantOrchestrationResult {
+  placeholders: {
+    NAME: string;
+    DOB: string;
+    DATE: string;
+    DOCUMENT_TYPE: string;
+  };
+  documentBody: string;
+  tasks: string[];
+  warnings: string[];
+}
+
 export enum AppStatus {
   IDLE = 'idle',
   LOADING = 'loading',
@@ -65,6 +77,9 @@ export interface UserSettings {
   templateId?: string;
   /** Custom image for the app home screen (when no patient selected). Data URL or URL. */
   homeScreenImageUrl?: string;
+  /** Optional per-user letterhead stored in Drive (uploaded from Settings). */
+  letterheadDriveFileId?: string;
+  letterheadFileName?: string;
 }
 
 export interface NoteField {
